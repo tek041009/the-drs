@@ -1,0 +1,214 @@
+name: Bowen source clips
+
+on:
+  push:
+    paths:
+      - ".github/workflows/bowen_sources.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acquire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install yt-dlp and ffmpeg
+        run: |
+          python -m pip install --upgrade yt-dlp
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+
+      - name: Locate quotes and cut source video snippets
+        shell: bash
+        run: |
+          mkdir -p out work
+          cat > /tmp/acquire.py <<'PY'
+          import os, re, glob, json, subprocess, html, difflib
+          from pathlib import Path
+
+          items = [
+            {
+              "name": "01_WEST_HAM_WAY_NOT_CONFIDENT",
+              "id": "4fg9pR3i3Vg",
+              "url": "https://www.youtube.com/watch?v=4fg9pR3i3Vg",
+              "target": "I'm not confident that Jarrod Bowen stays"
+            },
+            {
+              "name": "02_TONY_GALE_CHAMPIONSHIP",
+              "id": "ycmfKTfv6O4",
+              "url": "https://www.youtube.com/watch?v=ycmfKTfv6O4",
+              "target": "West Ham will be able to persuade him to play for them in the Championship"
+            },
+            {
+              "name": "03_DARREN_BENT_CHAMPIONS_LEAGUE",
+              "id": "zSjDwM2nmUM",
+              "url": "https://www.youtube.com/watch?v=zSjDwM2nmUM",
+              "target": "Champions League football pretty much week in week out"
+            },
+            {
+              "name": "04_STELLING_PARLOUR_WHAT_AM_I_DOING",
+              "id": "AYB1oR60h0U",
+              "url": "https://www.youtube.com/watch?v=AYB1oR60h0U",
+              "target": "Jarrod's got to be looking at that league table and thinking what am I doing"
+            },
+            {
+              "name": "05_HAMMERS_CHAT_ATTRACTIVE",
+              "id": "TBQDPInEbEY",
+              "url": "https://www.youtube.com/watch?v=TBQDPInEbEY",
+              "target": "Would Jarrod Bowen want to go yeah I can understand that being attractive to him"
+            },
+            {
+              "name": "06_JAMES_CORDEN_ABSOLUTELY_SHOULD_GO",
+              "id": "xBCcQBX9OJ0",
+              "url": "https://www.youtube.com/watch?v=xBCcQBX9OJ0",
+              "target": "if Liverpool come in for him or Man United come in for him he absolutely should go"
+            }
+          ]
+
+          def run(cmd, check=True):
+              print("+", " ".join(cmd), flush=True)
+              return subprocess.run(cmd, text=True, capture_output=True, check=check)
+
+          def sec(ts):
+              p = ts.split(":")
+              if len(p) == 3:
+                  h,m,s = p
+                  return int(h)*3600 + int(m)*60 + float(s)
+              m,s = p
+              return int(m)*60 + float(s)
+
+          def norm(s):
+              s = html.unescape(s)
+              s = re.sub(r"<[^>]+>", " ", s)
+              s = s.replace("Jared","Jarrod").replace("Gerard","Jarrod").replace("Jarrad","Jarrod")
+              s = s.lower().replace("'", "")
+              s = re.sub(r"[^a-z0-9]+", " ", s)
+              return re.sub(r"\s+", " ", s).strip()
+
+          def parse_vtt(path):
+              txt = Path(path).read_text(errors="ignore")
+              lines = txt.splitlines()
+              cues=[]
+              i=0
+              while i < len(lines):
+                  if "-->" in lines[i]:
+                      m=re.match(r"\s*([0-9:.]+)\s*-->\s*([0-9:.]+)", lines[i])
+                      if not m:
+                          i += 1; continue
+                      st,en=sec(m.group(1)),sec(m.group(2))
+                      i += 1
+                      body=[]
+                      while i < len(lines) and lines[i].strip():
+                          if not lines[i].startswith("NOTE"):
+                              body.append(lines[i].strip())
+                          i += 1
+                      t=norm(" ".join(body))
+                      if t:
+                          cues.append((st,en,t))
+                  i += 1
+              # Remove exact rolling-caption duplicates while keeping timing progression.
+              clean=[]
+              prev=None
+              for c in cues:
+                  if c[2] != prev:
+                      clean.append(c); prev=c[2]
+              return clean
+
+          def best_window(cues,target):
+              nt=norm(target)
+              best=None
+              for i in range(len(cues)):
+                  joined=""
+                  for j in range(i,min(len(cues),i+10)):
+                      joined=(joined+" "+cues[j][2]).strip()
+                      # Rolling captions often repeat text; sequence ratio handles it robustly.
+                      r=difflib.SequenceMatcher(None, nt, joined).ratio()
+                      bonus = sum(1 for w in nt.split() if w in joined.split()) / max(1,len(nt.split()))
+                      score = r*0.65 + bonus*0.35
+                      cand=(score,i,j,cues[i][0],cues[j][1],joined)
+                      if best is None or cand[0] > best[0]:
+                          best=cand
+              return best
+
+          results=[]
+          for item in items:
+              os.chdir("work")
+              for f in glob.glob(item["id"]+"*"):
+                  try: os.remove(f)
+                  except: pass
+
+              # Captions first: cheap and gives exact quote window.
+              capcmd=[
+                "yt-dlp","--skip-download","--write-auto-subs","--write-subs",
+                "--sub-langs","en.*,en","--sub-format","vtt",
+                "--extractor-args","youtube:player_client=web_safari,android_vr,web",
+                "-o", item["id"]+".%(ext)s", item["url"]
+              ]
+              cp=run(capcmd, check=False)
+              print(cp.stdout)
+              print(cp.stderr)
+              vtts=glob.glob(item["id"]+"*.vtt")
+              if not vtts:
+                  raise RuntimeError("No captions for "+item["name"])
+              # Prefer English auto/manual caption.
+              vtt=sorted(vtts, key=lambda p: ("orig" in p, len(p)))[0]
+              cues=parse_vtt(vtt)
+              best=best_window(cues,item["target"])
+              if not best or best[0] < 0.28:
+                  raise RuntimeError(f"Could not match {item['name']} best={best}")
+              score,i,j,st,en,joined=best
+              # Source clips get 2 sec handle either side.
+              cut_st=max(0,st-2.0)
+              cut_en=en+2.0
+              print("MATCH",item["name"],score,st,en,joined,flush=True)
+              Path("../out/"+item["name"]+".txt").write_text(
+                  f"source={item['url']}\nmatch_score={score:.3f}\nquote_start={st:.3f}\nquote_end={en:.3f}\nclip_start={cut_st:.3f}\nclip_end={cut_en:.3f}\nmatched_text={joined}\n"
+              )
+
+              # Download only this small time window.
+              section=f"*{cut_st:.3f}-{cut_en:.3f}"
+              outbase="../out/"+item["name"]
+              dlcmd=[
+                "yt-dlp",
+                "--download-sections", section,
+                "--force-keyframes-at-cuts",
+                "--extractor-args","youtube:player_client=web_safari,android_vr,web",
+                "-f","bv*[height<=720]+ba/b[height<=720]",
+                "--merge-output-format","mp4",
+                "-o", outbase+".%(ext)s",
+                item["url"]
+              ]
+              dp=run(dlcmd, check=False)
+              print(dp.stdout)
+              print(dp.stderr)
+              candidates=glob.glob(outbase+".*")
+              vids=[p for p in candidates if p.lower().endswith((".mp4",".mkv",".webm",".mov"))]
+              if not vids:
+                  raise RuntimeError("No video downloaded for "+item["name"])
+              src=vids[0]
+              final=outbase+".mp4"
+              if src != final:
+                  # Normalize container only; short source stays visually untouched.
+                  run(["ffmpeg","-y","-i",src,"-c:v","libx264","-preset","fast","-crf","17","-c:a","aac","-b:a","192k",final])
+              # Verify decodes.
+              run(["ffmpeg","-v","error","-i",final,"-f","null","-"])
+              probe=run(["ffprobe","-v","error","-show_entries","format=duration:stream=width,height,r_frame_rate","-of","default=nw=1",final])
+              print(probe.stdout)
+              results.append({**item,"match_score":score,"quote_start":st,"quote_end":en,"clip_start":cut_st,"clip_end":cut_en,"matched_text":joined})
+              os.chdir("..")
+
+          Path("out/manifest.json").write_text(json.dumps(results,indent=2))
+          PY
+          python /tmp/acquire.py
+
+      - name: Upload Bowen source bank
+        uses: actions/upload-artifact@v4
+        with:
+          name: bowen-media-chatter-six
+          path: out/
+          if-no-files-found: error
+          retention-days: 3
