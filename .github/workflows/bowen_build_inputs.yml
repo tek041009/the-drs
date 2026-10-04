@@ -29,13 +29,19 @@ jobs:
           mkdir -p out
           curl -L --fail --retry 3 -o out/BOWEN_V38_APPROVED_BASE.mp4 'https://d2ol7oe51mr4n9.cloudfront.net/user_3JzZORlH5hOIMtVqoR4LoNCKTLC/6a66e70e-477d-4014-a57c-bb0546c381b2.mp4'
           ffmpeg -v error -i out/BOWEN_V38_APPROVED_BASE.mp4 -f null -
-          ffprobe -v error -show_entries format=duration:stream=width,height,r_frame_rate -of default=nw=1 out/BOWEN_V38_APPROVED_BASE.mp4 > out/V38_probe.txt
+          ffprobe -v error -show_entries format=duration:stream=width,height,r_frame_rate -of default=nw=1 out/BOWEN_V38_APPROVED_BASE.mp4 > out/V38_probe.txt\n          curl -L --fail --retry 3 -o out/ERROR_BURNLEY_AREOLA_FUMBLE.mp4 'https://d2ol7oe51mr4n9.cloudfront.net/user_3JzZORlH5hOIMtVqoR4LoNCKTLC/0d839827-6ce3-4207-abe6-a756b625ed5e.mp4'\n          ffmpeg -v error -i out/ERROR_BURNLEY_AREOLA_FUMBLE.mp4 -f null -
 
-          yt-dlp --proxy socks5://127.0.0.1:1080 --force-ipv4 --rm-cache-dir --js-runtimes node --remote-components ejs:github \
-            --extractor-args 'youtube:player_client=tv_downgraded,web_creator,mweb;player_skip=webpage' \
-            -f 'bestvideo*[height<=720]+bestaudio/best[height<=720]/18' --merge-output-format mp4 \
-            -o out/stay_full.mp4 'https://www.youtube.com/watch?v=M3kw4cNJERA'
+          for n in 1 2 3; do
+            yt-dlp --proxy socks5://127.0.0.1:1080 --force-ipv4 --rm-cache-dir --js-runtimes node --remote-components ejs:github \
+              --extractor-args 'youtube:player_client=tv_downgraded,web_creator,mweb;player_skip=webpage' \
+              --retries 2 --socket-timeout 20 \
+              -f 'bestvideo*[height<=720]+bestaudio/best[height<=720]/18' --merge-output-format mp4 \
+              -o out/stay_full.mp4 'https://www.youtube.com/watch?v=M3kw4cNJERA' && break
+            docker restart bowen-warp >/dev/null
+            sleep 8
+          done
 
+          if [ -f out/stay_full.mp4 ]; then
           cat > /tmp/stay.py <<'PY'
           import re,difflib,json,subprocess
           from faster_whisper import WhisperModel
@@ -75,8 +81,12 @@ jobs:
           ffmpeg -v error -i out/BOWEN_STAY_NO_BRAINER_EXACT.mp4 -f null -
           ffprobe -v error -show_entries format=duration:stream=width,height,r_frame_rate -of default=nw=1 out/BOWEN_STAY_NO_BRAINER_EXACT.mp4 > out/stay_probe.txt
           rm -f out/stay_full.mp4
+          else
+            echo "Stay source acquisition failed after retries; preserving protected base/Burnley."
+          fi
 
       - name: Upload protected inputs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: bowen-protected-base-and-stay
