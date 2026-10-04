@@ -1,0 +1,21 @@
+name: Bowen stay fetch
+on:
+  push:
+    paths:
+      - ".github/workflows/bowen_stay_fetch.yml"
+  workflow_dispatch:
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          set -e
+          mkdir -p out
+          curl -L --fail --retry 4 -o out/BOWEN_STAY_LANDSCAPE_FULL.mp4 'https://aiden90.savenow.to/api/v2/download/PpEDbXyjirxzz3EbL6elNqPJzHb56SeTLNE8bYVlOSgd9IM8'
+          ffprobe -v error -show_entries format=duration:stream=codec_name,width,height,r_frame_rate -of default=nw=1 out/BOWEN_STAY_LANDSCAPE_FULL.mp4 > out/probe.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bowen-stay-landscape
+          path: out/
+          retention-days: 2
