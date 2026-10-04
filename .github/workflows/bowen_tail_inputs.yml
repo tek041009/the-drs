@@ -1,0 +1,111 @@
+name: Bowen tail inputs
+
+on:
+  push:
+    paths:
+      - ".github/workflows/bowen_tail_inputs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install free tools
+        run: |
+          python -m pip install --upgrade yt-dlp faster-whisper 'av<19'
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          docker run -d --name bowen-warp -p 1080:1080 ghcr.io/kingcc/warproxy:latest
+          sleep 10
+
+      - name: Recover Burnley and clean Bowen stay video
+        shell: bash
+        run: |
+          set -u
+          mkdir -p out
+
+          curl -L --fail --retry 3             -o out/ERROR_BURNLEY_AREOLA_FUMBLE.mp4             'https://d2ol7oe51mr4n9.cloudfront.net/user_3JzZORlH5hOIMtVqoR4LoNCKTLC/0d839827-6ce3-4207-abe6-a756b625ed5e.mp4'
+          ffmpeg -v error -i out/ERROR_BURNLEY_AREOLA_FUMBLE.mp4 -f null -
+          ffprobe -v error -show_entries format=duration:stream=width,height,r_frame_rate             -of default=nw=1 out/ERROR_BURNLEY_AREOLA_FUMBLE.mp4 > out/burnley_probe.txt
+
+          ok=0
+          for n in 1 2 3; do
+            yt-dlp               --proxy socks5://127.0.0.1:1080               --force-ipv4 --rm-cache-dir               --js-runtimes node --remote-components ejs:github               --extractor-args 'youtube:player_client=tv_downgraded,web_creator,mweb;player_skip=webpage'               --retries 2 --socket-timeout 20               -f 'bestvideo*[height<=720]+bestaudio/best[height<=720]/18'               --merge-output-format mp4               -o out/stay_full.mp4               'https://www.youtube.com/watch?v=M3kw4cNJERA' && ok=1 && break
+            docker restart bowen-warp >/dev/null
+            sleep 8
+          done
+
+          if [ "$ok" -eq 1 ] && [ -f out/stay_full.mp4 ]; then
+            cat > /tmp/stay.py <<'PY'
+import re,difflib,json,subprocess
+from faster_whisper import WhisperModel
+
+targets=[
+ ("main_stay","the main motivation for me is staying and bringing this club back into the premier league where we belong"),
+ ("no_brainer","it was a no brainer for me to be here")
+]
+
+def norm(s):
+    s=s.lower().replace("'","")
+    return re.sub(r'\s+',' ',re.sub(r'[^a-z0-9]+',' ',s)).strip()
+
+model=WhisperModel('tiny.en',device='cpu',compute_type='int8')
+segs,_=model.transcribe('out/stay_full.mp4',language='en',beam_size=2,vad_filter=True,word_timestamps=True)
+words=[]
+for s in segs:
+    for w in (s.words or []):
+        ww=norm(w.word)
+        if ww:
+            words.append({'start':w.start,'end':w.end,'word':ww})
+
+results={}
+for key,target in targets:
+    nt=norm(target)
+    best=None
+    for i in range(len(words)):
+        txt=''
+        for j in range(i,min(len(words),i+28)):
+            txt=(txt+' '+words[j]['word']).strip()
+            seq=difflib.SequenceMatcher(None,nt,txt).ratio()
+            tw=set(nt.split()); sw=set(txt.split())
+            score=.7*seq+.3*(len(tw&sw)/max(1,len(tw)))
+            cand=(score,i,j,words[i]['start'],words[j]['end'],txt)
+            if best is None or score>best[0]:
+                best=cand
+    results[key]=best
+    if best and best[0] >= .48:
+        score,i,j,qs,qe,txt=best
+        # review clip + exact timeline clip
+        hs=max(0,qs-1.5); he=qe+1.5
+        subprocess.run(['ffmpeg','-y','-loglevel','error','-ss',f'{hs:.3f}','-i','out/stay_full.mp4',
+                        '-t',f'{he-hs:.3f}','-c:v','libx264','-preset','fast','-crf','17',
+                        '-c:a','aac','-b:a','192k','-movflags','+faststart',
+                        f'out/BOWEN_STAY_{key.upper()}_WITH_HANDLES.mp4'],check=True)
+        es=max(0,qs-.10); ee=qe+.14
+        subprocess.run(['ffmpeg','-y','-loglevel','error','-ss',f'{es:.3f}','-i','out/stay_full.mp4',
+                        '-t',f'{ee-es:.3f}','-c:v','libx264','-preset','fast','-crf','17',
+                        '-c:a','aac','-b:a','192k','-movflags','+faststart',
+                        f'out/BOWEN_STAY_{key.upper()}_EXACT.mp4'],check=True)
+
+open('out/stay_word_timing.json','w').write(json.dumps(results,indent=2))
+PY
+            python /tmp/stay.py
+            ffprobe -v error -show_entries format=duration:stream=width,height,r_frame_rate               -of default=nw=1 out/stay_full.mp4 > out/stay_full_probe.txt
+            rm -f out/stay_full.mp4
+          else
+            echo "stay download failed" > out/stay_download_failed.txt
+          fi
+
+      - name: Upload tail inputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bowen-tail-inputs
+          path: out/
+          if-no-files-found: error
+          retention-days: 3
