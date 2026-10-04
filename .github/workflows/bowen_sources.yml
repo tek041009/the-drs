@@ -18,7 +18,7 @@ jobs:
 
       - name: Install free source tools and WARP route
         run: |
-          python -m pip install --upgrade yt-dlp bgutil-ytdlp-pot-provider faster-whisper
+          python -m pip install --upgrade yt-dlp bgutil-ytdlp-pot-provider faster-whisper 'av<19'
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg
           docker run -d --name bowen-warp -p 1080:1080 ghcr.io/kingcc/warproxy:latest
