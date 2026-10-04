@@ -1,0 +1,85 @@
+name: Bowen protected base and stay clip
+
+on:
+  push:
+    paths:
+      - ".github/workflows/bowen_build_inputs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install free tools and WARP
+        run: |
+          python -m pip install --upgrade yt-dlp faster-whisper 'av<19'
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          docker run -d --name bowen-warp -p 1080:1080 ghcr.io/kingcc/warproxy:latest
+          sleep 10
+
+      - name: Recover V38 and clean landscape stay source
+        shell: bash
+        run: |
+          mkdir -p out
+          curl -L --fail --retry 3 -o out/BOWEN_V38_APPROVED_BASE.mp4 'https://d2ol7oe51mr4n9.cloudfront.net/user_3JzZORlH5hOIMtVqoR4LoNCKTLC/6a66e70e-477d-4014-a57c-bb0546c381b2.mp4'
+          ffmpeg -v error -i out/BOWEN_V38_APPROVED_BASE.mp4 -f null -
+          ffprobe -v error -show_entries format=duration:stream=width,height,r_frame_rate -of default=nw=1 out/BOWEN_V38_APPROVED_BASE.mp4 > out/V38_probe.txt
+
+          yt-dlp --proxy socks5://127.0.0.1:1080 --force-ipv4 --rm-cache-dir --js-runtimes node --remote-components ejs:github \
+            --extractor-args 'youtube:player_client=tv_downgraded,web_creator,mweb;player_skip=webpage' \
+            -f 'bestvideo*[height<=720]+bestaudio/best[height<=720]/18' --merge-output-format mp4 \
+            -o out/stay_full.mp4 'https://www.youtube.com/watch?v=M3kw4cNJERA'
+
+          cat > /tmp/stay.py <<'PY'
+          import re,difflib,json,subprocess
+          from faster_whisper import WhisperModel
+          target='it was a no brainer for me to be here'
+          def norm(s):
+              s=s.lower().replace("'","")
+              return re.sub(r'\\s+',' ',re.sub(r'[^a-z0-9]+',' ',s)).strip()
+          model=WhisperModel('tiny.en',device='cpu',compute_type='int8')
+          segs,_=model.transcribe('out/stay_full.mp4',language='en',beam_size=2,vad_filter=True,word_timestamps=True)
+          words=[]
+          for s in segs:
+              for w in (s.words or []):
+                  words.append({'start':w.start,'end':w.end,'word':norm(w.word)})
+          nt=norm(target); best=None
+          for i in range(len(words)):
+              txt=''
+              for j in range(i,min(len(words),i+16)):
+                  txt=(txt+' '+words[j]['word']).strip()
+                  score=difflib.SequenceMatcher(None,nt,txt).ratio()
+                  cand=(score,i,j,words[i]['start'],words[j]['end'],txt)
+                  if best is None or score>best[0]:best=cand
+          if not best or best[0]<0.55: raise RuntimeError(best)
+          score,i,j,qs,qe,txt=best
+          # 1.5s handles for review bank
+          cs=max(0,qs-1.5); ce=qe+1.5
+          subprocess.run(['ffmpeg','-y','-loglevel','error','-ss',f'{cs:.3f}','-i','out/stay_full.mp4','-t',f'{ce-cs:.3f}',
+                          '-c:v','libx264','-preset','fast','-crf','17','-c:a','aac','-b:a','192k','-movflags','+faststart',
+                          'out/BOWEN_STAY_CLEAN_LANDSCAPE_WITH_HANDLES.mp4'],check=True)
+          # exact quote for timeline test, slight natural handles
+          ecs=max(0,qs-.10); ece=qe+.14
+          subprocess.run(['ffmpeg','-y','-loglevel','error','-ss',f'{ecs:.3f}','-i','out/stay_full.mp4','-t',f'{ece-ecs:.3f}',
+                          '-c:v','libx264','-preset','fast','-crf','17','-c:a','aac','-b:a','192k','-movflags','+faststart',
+                          'out/BOWEN_STAY_NO_BRAINER_EXACT.mp4'],check=True)
+          open('out/stay_timing.json','w').write(json.dumps(dict(score=score,quote_start=qs,quote_end=qe,matched=txt,handle_start=cs,handle_end=ce),indent=2))
+          PY
+          python /tmp/stay.py
+          ffmpeg -v error -i out/BOWEN_STAY_NO_BRAINER_EXACT.mp4 -f null -
+          ffprobe -v error -show_entries format=duration:stream=width,height,r_frame_rate -of default=nw=1 out/BOWEN_STAY_NO_BRAINER_EXACT.mp4 > out/stay_probe.txt
+          rm -f out/stay_full.mp4
+
+      - name: Upload protected inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: bowen-protected-base-and-stay
+          path: out/
+          if-no-files-found: error
+          retention-days: 3
