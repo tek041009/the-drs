@@ -1,0 +1,38 @@
+name: Source pull
+on:
+  push:
+    paths:
+      - '.github/workflows/source-pull.yml'
+      - 'source-pull-trigger.txt'
+  workflow_dispatch:
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install tools
+        run: |
+          python -m pip install -q --upgrade yt-dlp
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+      - name: Download sources
+        run: |
+          mkdir -p source_pull
+          cd source_pull
+          urls=(
+            "https://www.youtube.com/watch?v=4fg9pR3i3Vg"
+            "https://www.youtube.com/watch?v=zSjDwM2nmUM"
+            "https://www.youtube.com/watch?v=TBQDPInEbEY"
+            "https://www.youtube.com/watch?v=ycmfKTfv6O4"
+            "https://www.youtube.com/watch?v=AYB1oR60h0U"
+            "https://www.youtube.com/watch?v=xBCcQBX9OJ0"
+          )
+          for u in "${urls[@]}"; do
+            yt-dlp --no-playlist --write-auto-subs --sub-langs "en.*" --sub-format vtt               -f "bv*[height<=720]+ba/b[height<=720]" --merge-output-format mp4               -o "%(id)s.%(ext)s" "$u"
+          done
+          ls -lh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bowen-source-pull
+          path: source_pull/
+          compression-level: 0
+          retention-days: 1
