@@ -1,0 +1,26 @@
+name: Bowen base only
+on:
+  push:
+    paths:
+      - ".github/workflows/bowen_base_only.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Recover approved base and Burnley
+        run: |
+          set -e
+          mkdir -p out
+          curl -L --fail --retry 3 -o out/BOWEN_V38_APPROVED_BASE.mp4 'https://d2ol7oe51mr4n9.cloudfront.net/user_3JzZORlH5hOIMtVqoR4LoNCKTLC/6a66e70e-477d-4014-a57c-bb0546c381b2.mp4'
+          curl -L --fail --retry 3 -o out/ERROR_BURNLEY_AREOLA_FUMBLE.mp4 'https://d2ol7oe51mr4n9.cloudfront.net/user_3JzZORlH5hOIMtVqoR4LoNCKTLC/0d839827-6ce3-4207-abe6-a756b625ed5e.mp4'
+          ffprobe -v error -show_entries format=duration:stream=codec_name,width,height,r_frame_rate -of default=nw=1 out/BOWEN_V38_APPROVED_BASE.mp4 > out/V38_probe.txt
+          ffprobe -v error -show_entries format=duration:stream=codec_name,width,height,r_frame_rate -of default=nw=1 out/ERROR_BURNLEY_AREOLA_FUMBLE.mp4 > out/burnley_probe.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bowen-v38-burnley
+          path: out/
+          retention-days: 2
