@@ -1,0 +1,22 @@
+name: Bowen Bent full
+on:
+  push:
+    paths:
+      - ".github/workflows/bowen_bent_full.yml"
+permissions:
+  contents: read
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          set -e
+          mkdir -p out
+          curl -L --fail --retry 5 -o out/DARREN_BENT_FULL.mp4 'https://pamela88.savenow.to/api/v2/download/wPpdwLacqJ11pCVPr0rBBYgMvViifzSM5a24WGt1icmM3UAx'
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          ffmpeg -v error -i out/DARREN_BENT_FULL.mp4 -f null -
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bowen-bent-full
+          path: out/
+          retention-days: 2
