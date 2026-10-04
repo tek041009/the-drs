@@ -1,0 +1,124 @@
+name: Bowen word exact final
+on:
+  push:
+    paths:
+      - ".github/workflows/bowen_word_exact_final.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  exact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Install
+        run: |
+          python -m pip install -q faster-whisper
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg unzip
+      - name: Fetch original source artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p src out
+          curl -L --fail -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -o /tmp/src.zip \
+            "https://api.github.com/repos/tek041009/the-drs/actions/artifacts/11290650864/zip"
+          unzip -q /tmp/src.zip -d src
+          find src -maxdepth 3 -type f -printf '%p %s bytes\n'
+      - name: Word align and exact-cut four bites
+        run: |
+          cat > /tmp/cut.py <<'PY'
+          import json,re,subprocess,sys
+          from pathlib import Path
+          from faster_whisper import WhisperModel
+
+          def n(s):
+              s=s.lower().replace("’","'").replace("'","")
+              s=s.replace("jared","jarrod").replace("jarrad","jarrod")
+              s=s.replace("united","united")
+              return re.sub(r"[^a-z0-9]+","",s)
+
+          def run(c):
+              subprocess.run(c,check=True)
+
+          sources={
+            "1": next(Path("src").rglob("01_WEST_HAM_WAY_NOT_CONFIDENT.mp4")),
+            "2": next(Path("src").rglob("02_TONY_GALE_CHAMPIONSHIP.mp4")),
+            "3": next(Path("src").rglob("03_DARREN_BENT_CHAMPIONS_LEAGUE.mp4")),
+            "4": next(Path("src").rglob("06_JAMES_CORDEN_ABSOLUTELY_SHOULD_GO.mp4")),
+          }
+          targets={
+            "1":["im","not","confident","that","jarrod","bowen","stays"],
+            "2":["but","what","about","jarrod","bowen","is","there","any","way","you","think","that","west","ham","will","be","able","to","persuade","him","to","play","for","them","in","the","championship"],
+            "3":["but","i","think","he","will","definitely","think","to","himself","i","should","be","playing","champions","league","football"],
+            "4":["if","liverpool","come","in","for","him","or","man","united","come","in","for","him","he","absolutely","should","go"],
+          }
+          outnames={
+            "1":"01_IM_NOT_CONFIDENT_THAT_JARROD_BOWEN_STAYS.mp4",
+            "2":"02_BUT_WHAT_ABOUT_BOWEN_PERSUADE_CHAMPIONSHIP.mp4",
+            "3":"03_THINKING_CHAMPIONS_LEAGUE_FOOTBALL.mp4",
+            "4":"04_IF_LIVERPOOL_OR_MAN_UTD_HE_ABSOLUTELY_SHOULD_GO.mp4",
+          }
+
+          model=WhisperModel("small.en",device="cpu",compute_type="int8")
+          manifest={}
+          for k,src in sources.items():
+              segs,_=model.transcribe(str(src),language="en",word_timestamps=True,beam_size=5,vad_filter=False)
+              words=[]
+              for s in segs:
+                  for w in (s.words or []):
+                      nw=n(w.word)
+                      if nw:
+                          words.append({"text":w.word.strip(),"norm":nw,"start":float(w.start),"end":float(w.end)})
+              Path(f"out/{k}_words.json").write_text(json.dumps(words,indent=2))
+
+              tar=[n(x) for x in targets[k]]
+              # dynamic alignment: search contiguous spans allowing ASR one-token variations.
+              best=None
+              for i in range(len(words)):
+                  for j in range(i,min(len(words),i+len(tar)+8)):
+                      cand=[x["norm"] for x in words[i:j+1]]
+                      # levenshtein at token level
+                      m,nc=len(tar),len(cand)
+                      dp=list(range(nc+1))
+                      for a in range(1,m+1):
+                          nd=[a]+[0]*nc
+                          for b in range(1,nc+1):
+                              cost=0 if tar[a-1]==cand[b-1] else 1
+                              nd[b]=min(dp[b]+1,nd[b-1]+1,dp[b-1]+cost)
+                          dp=nd
+                      dist=dp[nc]
+                      score=dist + abs(len(cand)-len(tar))*0.15
+                      if best is None or score<best[0]:
+                          best=(score,i,j,cand)
+              score,i,j,cand=best
+              # Do not cut on guessed silence: cut just before first phoneme and shortly after final word.
+              start=max(0,words[i]["start"]-0.08)
+              end=words[j]["end"]+0.12
+              # But ensure no following word begins before our end handle.
+              if j+1 < len(words):
+                  end=min(end, max(words[j]["end"]+0.04, words[j+1]["start"]-0.04))
+              dur=end-start
+              outfile=Path("out")/outnames[k]
+              run(["ffmpeg","-y","-loglevel","error","-ss",f"{start:.3f}","-i",str(src),
+                   "-t",f"{dur:.3f}","-map","0:v:0","-map","0:a:0",
+                   "-c:v","libx264","-preset","fast","-crf","17",
+                   "-c:a","aac","-b:a","192k","-movflags","+faststart",str(outfile)])
+              # Decode final export.
+              run(["ffmpeg","-v","error","-i",str(outfile),"-f","null","-"])
+              manifest[k]={
+                  "source":str(src),"target":" ".join(targets[k]),"matched_words":words[i:j+1],
+                  "cut_start":start,"cut_end":end,"duration":dur,"score":score,"output":str(outfile),
+                  "next_word":words[j+1] if j+1<len(words) else None,
+              }
+          Path("out/manifest.json").write_text(json.dumps(manifest,indent=2))
+          PY
+          python /tmp/cut.py
+          cat out/manifest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bowen-word-exact-final
+          path: out/
+          retention-days: 2
