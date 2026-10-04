@@ -1,0 +1,39 @@
+name: Bowen stay source
+on:
+  push:
+    paths:
+      - ".github/workflows/bowen_stay_source.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  acquire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Install source tools
+        run: |
+          python -m pip install -q --upgrade yt-dlp faster-whisper 'av<19'
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          docker run -d --name warp -p 1080:1080 ghcr.io/kingcc/warproxy:latest
+          sleep 8
+      - name: Acquire clean landscape source
+        shell: bash
+        run: |
+          set +e
+          mkdir -p out
+          OPTS=(--force-ipv4 --rm-cache-dir --js-runtimes node --remote-components ejs:github --retries 5 --fragment-retries 5 --socket-timeout 45)
+          yt-dlp --proxy socks5://127.0.0.1:1080 "${OPTS[@]}" --extractor-args 'youtube:player_client=tv_downgraded,web_creator,mweb;player_skip=webpage' -f 'bestvideo*[height<=720]+bestaudio/best[height<=720]/18' --merge-output-format mp4 -o out/BOWEN_STAY_LANDSCAPE_FULL.mp4 'https://www.youtube.com/watch?v=M3kw4cNJERA'
+          if [ ! -s out/BOWEN_STAY_LANDSCAPE_FULL.mp4 ]; then
+            yt-dlp "${OPTS[@]}" --extractor-args 'youtube:player_client=android_vr,web_safari,web;player_skip=webpage' -f 'bestvideo*[height<=720]+bestaudio/best[height<=720]/18' --merge-output-format mp4 -o out/BOWEN_STAY_LANDSCAPE_FULL.mp4 'https://www.youtube.com/watch?v=M3kw4cNJERA'
+          fi
+          test -s out/BOWEN_STAY_LANDSCAPE_FULL.mp4 || exit 1
+          ffmpeg -v error -i out/BOWEN_STAY_LANDSCAPE_FULL.mp4 -f null -
+          ffprobe -v error -show_entries format=duration:stream=width,height,r_frame_rate -of default=nw=1 out/BOWEN_STAY_LANDSCAPE_FULL.mp4 > out/probe.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bowen-stay-clean-source
+          path: out/
+          retention-days: 2
