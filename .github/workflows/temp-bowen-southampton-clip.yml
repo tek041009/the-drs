@@ -1,0 +1,51 @@
+name: temp-bowen-southampton-clip
+on:
+  push:
+    branches:
+      - temp-bowen-southampton-clip
+    paths-ignore:
+      - 'temp_clip_output/**'
+
+permissions:
+  contents: write
+
+jobs:
+  fetch-clip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: temp-bowen-southampton-clip
+
+      - name: Install downloader
+        run: |
+          python -m pip install --upgrade yt-dlp curl_cffi
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+
+      - name: Download Southampton goal window
+        run: |
+          mkdir -p temp_clip_output
+          yt-dlp \
+            --no-playlist \
+            --remote-components ejs:github \
+            --download-sections "*07:15-09:50" \
+            --force-keyframes-at-cuts \
+            -f "bv*[height<=720]+ba/b[height<=720]" \
+            --merge-output-format mp4 \
+            -o "temp_clip_output/SOUTHAMPTON_BOWEN_GOAL_WINDOW.%(ext)s" \
+            "https://www.youtube.com/watch?v=mRif6sq9gBI"
+          FILE="$(find temp_clip_output -maxdepth 1 -type f -name 'SOUTHAMPTON_BOWEN_GOAL_WINDOW.*' | head -n 1)"
+          test -n "$FILE"
+          ffmpeg -y -i "$FILE" -c:v libx264 -preset veryfast -crf 20 -c:a aac -b:a 160k -movflags +faststart temp_clip_output/12_SOUTHAMPTON_BOWEN_GOAL_84_SOURCE_WINDOW.mp4
+          rm -f "$FILE"
+          ffprobe -v error -show_entries format=duration,size -show_entries stream=codec_name,width,height,r_frame_rate -of default=nw=1 temp_clip_output/12_SOUTHAMPTON_BOWEN_GOAL_84_SOURCE_WINDOW.mp4
+
+      - name: Commit temporary result
+        run: |
+          git config user.name "clip-fetch-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add temp_clip_output/12_SOUTHAMPTON_BOWEN_GOAL_84_SOURCE_WINDOW.mp4
+          git commit -m "temp: fetch Bowen Southampton goal window [skip ci]"
+          git push origin HEAD:temp-bowen-southampton-clip
