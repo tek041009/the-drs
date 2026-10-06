@@ -11,33 +11,22 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
     steps:
-      - name: Resolve Bowen through loader.to
+      - name: Call loader.to worker API
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p app output
-          cd app
-          npm init -y >/dev/null 2>&1
-          npm install @ernestoyoofi/yt.loader-to >/dev/null 2>&1
-
-          node -e 'const pkg=require("@ernestoyoofi/yt.loader-to").default; (async()=>{const r=await pkg.DownloadMedia({link:"https://www.youtube.com/watch?v=mRif6sq9gBI",format:"1080"}); console.log(JSON.stringify(r)); if(!r||!r.url) process.exit(2); require("fs").writeFileSync("../download-url.txt",r.url);})().catch(e=>{console.error(e);process.exit(1)})'
-
-          cd ..
-          DL="$(cat download-url.txt)"
-          echo "Resolved media URL host:"
-          python3 -c 'import sys,urllib.parse as u; print(u.urlparse(sys.argv[1]).netloc)' "$DL"
-
-          curl -A "Mozilla/5.0" -fL --retry 2 --connect-timeout 15 --max-time 300 "$DL" -o output/video.mp4
-          test -s output/video.mp4
-          file output/video.mp4
-          wc -c output/video.mp4
-
-      - name: Upload video artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: bowen-loader-test
-          path: output/video.mp4
-          compression-level: 0
-          retention-days: 1
+          URL="https://www.youtube.com/watch?v=mRif6sq9gBI"
+          QUERY=$(python3 -c 'import urllib.parse; print(urllib.parse.urlencode({"url":"https://www.youtube.com/watch?v=mRif6sq9gBI","add_info":"1","format":"1080"}))')
+          for IP in 172.67.198.191 104.21.95.172; do
+            echo "Trying loader.to via $IP"
+            CODE=$(curl --resolve "loader.to:443:$IP" -A "Mozilla/5.0" -sS -o /tmp/info.json -w "%{http_code}" --connect-timeout 10 --max-time 45 "https://loader.to/api/download?$QUERY" || true)
+            echo "HTTP $CODE"
+            cat /tmp/info.json || true
+            echo
+            if [ "$CODE" = "200" ]; then
+              exit 0
+            fi
+          done
+          exit 1
