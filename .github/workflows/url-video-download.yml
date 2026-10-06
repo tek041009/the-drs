@@ -3,7 +3,7 @@ name: URL Video Downloader
 on:
   push:
     paths:
-      - 'video-download/request.txt'
+      - 'video-download/requests/*.txt'
   workflow_dispatch:
 
 permissions:
@@ -22,42 +22,37 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install --upgrade yt-dlp pytubefix
 
-      - name: Download video
+      - name: Resolve request
+        id: request
         shell: bash
         run: |
           set -euo pipefail
-          URL="$(tr -d '\r\n' < video-download/request.txt)"
-          mkdir -p output
-          echo "Downloading: $URL"
+          REQUEST_FILE="$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" | grep '^video-download/requests/.*\.txt$' | head -n 1)"
+          test -n "$REQUEST_FILE"
+          URL="$(head -n 1 "$REQUEST_FILE" | tr -d '\r\n')"
+          test -n "$URL"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
 
-          if yt-dlp             --no-playlist             --merge-output-format mp4             --remux-video mp4             -f "bv*+ba/b"             -o "output/downloaded.%(ext)s"             "$URL"; then
+      - name: Download video
+        shell: bash
+        env:
+          VIDEO_URL: ${{ steps.request.outputs.url }}
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          echo "Downloading: $VIDEO_URL"
+
+          if yt-dlp --no-playlist --merge-output-format mp4 --remux-video mp4 -f "bv*+ba/b" -o "output/downloaded.%(ext)s" "$VIDEO_URL"; then
             echo "yt-dlp succeeded"
           else
             echo "yt-dlp failed; trying pytubefix"
-            python - <<'PY'
-from pathlib import Path
-from pytubefix import YouTube
-
-url = Path("video-download/request.txt").read_text().strip()
-yt = YouTube(url)
-stream = (
-    yt.streams
-      .filter(progressive=True, file_extension="mp4")
-      .order_by("resolution")
-      .desc()
-      .first()
-)
-if stream is None:
-    raise RuntimeError("No progressive MP4 stream found")
-stream.download(output_path="output", filename="downloaded.mp4")
-print("pytubefix succeeded")
-PY
+            python video-download/download_fallback.py "$VIDEO_URL"
           fi
 
           FILE="$(find output -maxdepth 1 -type f \( -name '*.mp4' -o -name '*.mkv' -o -name '*.webm' \) | head -n 1)"
           test -n "$FILE"
           if [ "$FILE" != "output/downloaded.mp4" ]; then
-            ffmpeg -y -i "$FILE" -c copy output/downloaded.mp4 ||             ffmpeg -y -i "$FILE" -c:v libx264 -c:a aac output/downloaded.mp4
+            ffmpeg -y -i "$FILE" -c copy output/downloaded.mp4 || ffmpeg -y -i "$FILE" -c:v libx264 -c:a aac output/downloaded.mp4
           fi
 
           ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1 output/downloaded.mp4
