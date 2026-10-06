@@ -11,22 +11,61 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
-      - name: Call loader.to worker API
+      - name: Convert and download Bowen through loader.to
         shell: bash
         run: |
           set -euo pipefail
           URL="https://www.youtube.com/watch?v=mRif6sq9gBI"
+          mkdir -p output
+
           QUERY=$(python3 -c 'import urllib.parse; print(urllib.parse.urlencode({"url":"https://www.youtube.com/watch?v=mRif6sq9gBI","add_info":"1","format":"1080"}))')
+          GOT=0
           for IP in 172.67.198.191 104.21.95.172; do
-            echo "Trying loader.to via $IP"
             CODE=$(curl --resolve "loader.to:443:$IP" -A "Mozilla/5.0" -sS -o /tmp/info.json -w "%{http_code}" --connect-timeout 10 --max-time 45 "https://loader.to/api/download?$QUERY" || true)
-            echo "HTTP $CODE"
-            cat /tmp/info.json || true
-            echo
-            if [ "$CODE" = "200" ]; then
-              exit 0
-            fi
+            echo "loader.to via $IP -> HTTP $CODE"
+            if [ "$CODE" = "200" ]; then GOT=1; break; fi
           done
-          exit 1
+          test "$GOT" -eq 1
+
+          TITLE=$(jq -r '.title // .info.title // empty' /tmp/info.json)
+          ID=$(jq -r '.id // empty' /tmp/info.json)
+          PROGRESS=$(jq -r '.progress_url // empty' /tmp/info.json)
+          echo "Title: $TITLE"
+          echo "Worker: $ID"
+          test -n "$ID"
+          if [ -z "$PROGRESS" ]; then
+            PROGRESS="https://p.savenow.to/api/progress?id=$ID"
+          fi
+          echo "Progress host: $(python3 -c 'import sys,urllib.parse as u; print(u.urlparse(sys.argv[1]).netloc)' "$PROGRESS")"
+
+          DL=""
+          for N in $(seq 1 150); do
+            curl -A "Mozilla/5.0" -sS --connect-timeout 10 --max-time 30 "$PROGRESS" -o /tmp/progress.json || true
+            SUCCESS=$(jq -r '.success // 0' /tmp/progress.json 2>/dev/null || echo 0)
+            TEXT=$(jq -r '.text // .message // empty' /tmp/progress.json 2>/dev/null || true)
+            PCT=$(jq -r '.progress // empty' /tmp/progress.json 2>/dev/null || true)
+            echo "Poll $N success=$SUCCESS progress=$PCT text=$TEXT"
+            DL=$(jq -r '.download_url // .download // empty' /tmp/progress.json 2>/dev/null || true)
+            if [ "$SUCCESS" = "1" ] && [ -n "$DL" ]; then
+              break
+            fi
+            sleep 2
+          done
+
+          test -n "$DL"
+          echo "Download host: $(python3 -c 'import sys,urllib.parse as u; print(u.urlparse(sys.argv[1]).netloc)' "$DL")"
+
+          curl -A "Mozilla/5.0" -fL --retry 2 --connect-timeout 15 --max-time 600 "$DL" -o output/bowen-southampton.mp4
+          test -s output/bowen-southampton.mp4
+          file output/bowen-southampton.mp4
+          wc -c output/bowen-southampton.mp4
+
+      - name: Upload Bowen MP4 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bowen-southampton
+          path: output/bowen-southampton.mp4
+          compression-level: 0
+          retention-days: 1
