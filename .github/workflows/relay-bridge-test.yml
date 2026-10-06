@@ -1,0 +1,27 @@
+name: Relay Bridge Test
+
+on:
+  push:
+    paths:
+      - 'video-download/relay-test-trigger.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Make tiny MP4
+        run: |
+          mkdir -p output
+          ffmpeg -y -f lavfi -i color=c=black:s=320x180:d=1 -f lavfi -i anullsrc=r=44100:cl=stereo -shortest -c:v libx264 -c:a aac output/relay-test.mp4
+          ffprobe -v error -show_entries format=duration,size -of json output/relay-test.mp4
+
+      - name: Upload test artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: relay-test
+          path: output/relay-test.mp4
+          compression-level: 0
+          retention-days: 1
