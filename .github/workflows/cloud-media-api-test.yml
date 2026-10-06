@@ -19,7 +19,6 @@ jobs:
           set -u
           URL="https://www.youtube.com/watch?v=mRif6sq9gBI"
           mkdir -p output
-          OK=0
 
           try_api () {
             BASE="$1"
@@ -35,26 +34,17 @@ jobs:
               ENDPOINT="$BASE/"
             fi
 
-            CODE=$(curl -A "Mozilla/5.0" -sS -o /tmp/r.json -w "%{http_code}"               -H "Accept: application/json" -H "Content-Type: application/json"               --connect-timeout 10 --max-time 45               -d "$BODY" "$ENDPOINT" || true)
+            CODE=$(curl -A "Mozilla/5.0" -sS -o /tmp/r.json -w "%{http_code}" -H "Accept: application/json" -H "Content-Type: application/json" --connect-timeout 10 --max-time 45 -d "$BODY" "$ENDPOINT" || true)
             echo "HTTP $CODE"
             cat /tmp/r.json || true
             echo
 
-            DL=$(python3 - <<'PY'
-import json
-try:
-    d=json.load(open('/tmp/r.json'))
-    print(d.get('url') or d.get('download') or '')
-except Exception:
-    print('')
-PY
-)
+            DL=$(jq -r '.url // .download // empty' /tmp/r.json 2>/dev/null || true)
             if [ -n "$DL" ]; then
               echo "Downloading returned media URL"
               if curl -A "Mozilla/5.0" -fL --connect-timeout 10 --max-time 180 "$DL" -o output/video.mp4; then
                 if [ -s output/video.mp4 ]; then
                   file output/video.mp4
-                  OK=1
                   return 0
                 fi
               fi
