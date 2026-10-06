@@ -150,15 +150,33 @@ for _,s in candidates:
 if len(chosen)<3: chosen=[45,150,280]
 print("chosen archival windows",chosen,flush=True)
 
+def load_archive_window(start,duration):
+    c=cv2.VideoCapture("paris.webm")
+    c.set(cv2.CAP_PROP_POS_MSEC,start*1000)
+    frames=[]
+    need=int(math.ceil(duration*FPS*1.10))+4
+    srcfps=c.get(cv2.CAP_PROP_FPS) or FPS
+    step=max(1,int(round(srcfps/FPS)))
+    n=0
+    while len(frames)<need:
+        ok,fr=c.read()
+        if not ok: break
+        if n%step==0:
+            frames.append(cv2.cvtColor(fr,cv2.COLOR_BGR2RGB))
+        n+=1
+    c.release()
+    return frames
+
+archive_windows=[
+    load_archive_window(chosen[0],5.3),
+    load_archive_window(chosen[1],11.5),
+]
+print("cached archival frames", [len(x) for x in archive_windows], flush=True)
+
 def archive_frame(local_t,slot):
-    start=chosen[slot%len(chosen)]
-    src=start+local_t*1.05
-    cap.set(cv2.CAP_PROP_POS_MSEC,src*1000)
-    ok,fr=cap.read()
-    if not ok:
-        cap.set(cv2.CAP_PROP_POS_MSEC,start*1000); ok,fr=cap.read()
-    fr=cv2.cvtColor(fr,cv2.COLOR_BGR2RGB)
-    im=Image.fromarray(fr)
+    frames=archive_windows[slot%len(archive_windows)]
+    idx=min(len(frames)-1,max(0,int(local_t*FPS*1.05)))
+    im=Image.fromarray(frames[idx])
     im=cover(im,(W,H),1.08,dx=12*math.sin(local_t*.7),dy=5*math.cos(local_t*.5))
     im=ImageOps.grayscale(im).convert("RGB")
     return grade(im,.82,1.18,.06)
