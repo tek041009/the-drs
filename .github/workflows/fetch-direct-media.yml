@@ -1,0 +1,33 @@
+name: Fetch Direct Media
+
+on:
+  push:
+    paths:
+      - 'video-download/direct-url.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch direct media
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="$(head -n 1 video-download/direct-url.txt | tr -d '\r\n')"
+          test -n "$URL"
+          curl -fL --retry 2 --connect-timeout 10 --max-time 300 "$URL" -o direct-media.mp4
+          test -s direct-media.mp4
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: direct-media
+          path: direct-media.mp4
+          compression-level: 0
+          retention-days: 1
