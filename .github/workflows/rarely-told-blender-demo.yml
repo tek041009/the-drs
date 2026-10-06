@@ -21,11 +21,11 @@ jobs:
         run: |
           pip install kokoro-onnx soundfile numpy
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg blender
+          sudo apt-get install -y -qq ffmpeg blender xvfb libegl1 libgl1-mesa-dri libglx-mesa0
       - name: Generate free narrator and soundtrack
         run: python rarely_told_audio.py
       - name: Render genuine 3D animation
-        run: blender --background --python rarely_told_blender.py
+        run: xvfb-run -a blender --background --python rarely_told_blender.py
       - name: Build 30-second opening
         run: |
           ffmpeg -y -loglevel error -i rarely_told_silent.mp4 -i mix.wav -t 30             -vf "scale=1280:720:flags=lanczos" -c:v libx264 -preset fast -crf 18             -c:a aac -b:a 192k -movflags +faststart Rarely_Told_Animated_First_30s.mp4
