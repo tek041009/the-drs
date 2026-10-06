@@ -18,6 +18,48 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Bootstrap downloader tools
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $python = $null
+          if (Get-Command py -ErrorAction SilentlyContinue) {
+            $python = "py"
+          } elseif (Get-Command python -ErrorAction SilentlyContinue) {
+            $python = "python"
+          } else {
+            if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+              throw "Python is missing and winget is unavailable."
+            }
+            winget install --id Python.Python.3.12 -e --accept-package-agreements --accept-source-agreements
+            $python = Get-ChildItem "$env:LOCALAPPDATA\Programs\Python" -Filter python.exe -Recurse -ErrorAction SilentlyContinue |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 1 -ExpandProperty FullName
+            if (-not $python) { throw "Python install completed but python.exe was not found." }
+          }
+
+          & $python -m pip install --upgrade yt-dlp pytubefix
+          if ($LASTEXITCODE -ne 0) { throw "Could not install yt-dlp/pytubefix." }
+
+          $ffmpeg = (Get-Command ffmpeg -ErrorAction SilentlyContinue).Source
+          if (-not $ffmpeg) {
+            if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+              throw "FFmpeg is missing and winget is unavailable."
+            }
+            winget install --id Gyan.FFmpeg -e --accept-package-agreements --accept-source-agreements
+            $ffmpeg = Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Filter ffmpeg.exe -Recurse -ErrorAction SilentlyContinue |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 1 -ExpandProperty FullName
+            if (-not $ffmpeg) {
+              $ffmpeg = (Get-Command ffmpeg -ErrorAction SilentlyContinue).Source
+            }
+            if (-not $ffmpeg) { throw "FFmpeg install completed but ffmpeg.exe was not found." }
+          }
+
+          "PYTHON_EXE=$python" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "FFMPEG_EXE=$ffmpeg" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Read request
         shell: powershell
         run: |
@@ -28,31 +70,37 @@ jobs:
       - name: Download video
         shell: powershell
         run: |
-          $ErrorActionPreference = "Stop"
+          $ErrorActionPreference = "Continue"
           New-Item -ItemType Directory -Force -Path output | Out-Null
           Remove-Item "output\downloaded-video.*" -Force -ErrorAction SilentlyContinue
 
           Write-Host "Downloading $env:VIDEO_URL"
-          & py -m yt_dlp --no-playlist --merge-output-format mp4 --remux-video mp4 -f "bv*+ba/b" -o "output/downloaded-video.%(ext)s" $env:VIDEO_URL
+          & $env:PYTHON_EXE -m yt_dlp --no-playlist --ffmpeg-location "$env:FFMPEG_EXE" --merge-output-format mp4 --remux-video mp4 -f "bv*+ba/b" -o "output/downloaded-video.%(ext)s" $env:VIDEO_URL
+          $ok = ($LASTEXITCODE -eq 0)
 
-          if ($LASTEXITCODE -ne 0) {
+          if (-not $ok) {
             Write-Host "yt-dlp failed; trying pytubefix"
-            & py video-download/download_fallback.py $env:VIDEO_URL
-            if ($LASTEXITCODE -ne 0) { throw "All download methods failed" }
+            Remove-Item "output\downloaded-video.*" -Force -ErrorAction SilentlyContinue
+            & $env:PYTHON_EXE video-download/download_fallback.py $env:VIDEO_URL
+            $ok = ($LASTEXITCODE -eq 0)
           }
+
+          if (-not $ok) { throw "All download methods failed" }
 
           $candidate = Get-ChildItem output -File | Where-Object { $_.Extension -in ".mp4",".mkv",".webm" } | Select-Object -First 1
           if (-not $candidate) { throw "No downloaded media file found" }
 
           if ($candidate.Name -ne "downloaded-video.mp4") {
-            & ffmpeg -y -i $candidate.FullName -c copy "output\downloaded-video.mp4"
+            & $env:FFMPEG_EXE -y -i $candidate.FullName -c copy "output\downloaded-video.mp4"
             if ($LASTEXITCODE -ne 0) {
-              & ffmpeg -y -i $candidate.FullName -c:v libx264 -c:a aac "output\downloaded-video.mp4"
+              & $env:FFMPEG_EXE -y -i $candidate.FullName -c:v libx264 -c:a aac "output\downloaded-video.mp4"
             }
           }
 
-          & ffprobe -v error -show_entries stream=codec_name,width,height -show_entries format=duration,size -of json "output\downloaded-video.mp4"
-          if ($LASTEXITCODE -ne 0) { throw "Downloaded MP4 failed ffprobe validation" }
+          $file = Get-Item "output\downloaded-video.mp4"
+          if ($file.Length -lt 10000) { throw "Downloaded MP4 is unexpectedly small." }
+          & $env:FFMPEG_EXE -v error -i "output\downloaded-video.mp4" -f null NUL
+          if ($LASTEXITCODE -ne 0) { throw "Downloaded MP4 failed media validation." }
 
       - name: Upload MP4 artifact
         uses: actions/upload-artifact@v4
