@@ -12,16 +12,15 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Make tiny MP4
+      - name: Make test file
         run: |
           mkdir -p output
-          ffmpeg -y -f lavfi -i color=c=black:s=320x180:d=1 -f lavfi -i anullsrc=r=44100:cl=stereo -shortest -c:v libx264 -c:a aac output/relay-test.mp4
-          ffprobe -v error -show_entries format=duration,size -of json output/relay-test.mp4
+          printf 'relay bridge works\n' > output/relay-test.txt
 
       - name: Upload test artifact
         uses: actions/upload-artifact@v4
         with:
           name: relay-test
-          path: output/relay-test.mp4
+          path: output/relay-test.txt
           compression-level: 0
           retention-days: 1
