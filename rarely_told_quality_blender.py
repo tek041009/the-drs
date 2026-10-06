@@ -2,7 +2,7 @@ import bpy, os, math, glob, random, subprocess
 from mathutils import Vector
 
 FPS=12
-W,H=960,540
+W,H=720,405
 END=FPS*30
 ROOT=os.getcwd()
 AS=os.path.join(ROOT,"assets")
@@ -407,7 +407,7 @@ volmat=bpy.data.materials.new('haze'); volmat.use_nodes=True
 nt=volmat.node_tree; nt.nodes.clear(); out=nt.nodes.new('ShaderNodeOutputMaterial'); pv=nt.nodes.new('ShaderNodeVolumePrincipled')
 pv.inputs['Density'].default_value=.008; pv.inputs['Color'].default_value=(.35,.43,.55,1)
 nt.links.new(pv.outputs['Volume'],out.inputs['Volume'])
-haze=cube('haze',(70,0,9),(90,30,15),volmat)
+# volumetric box disabled on CPU prototype; lighting/fog retained via grade
 
 bpy.ops.wm.save_as_mainfile(filepath='rarely_told_assets.blend')
 bpy.ops.render.render(animation=True)
