@@ -1,0 +1,70 @@
+name: Cloud Media API Test
+
+on:
+  push:
+    paths:
+      - 'video-download/cloud-proxy-test.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Test cobalt-compatible APIs
+        shell: bash
+        run: |
+          set -u
+          URL="https://www.youtube.com/watch?v=mRif6sq9gBI"
+          mkdir -p output
+          OK=0
+
+          try_api () {
+            BASE="$1"
+            MODE="$2"
+            echo "Testing $BASE ($MODE)"
+            rm -f /tmp/r.json output/video.mp4
+
+            if [ "$MODE" = "old" ]; then
+              BODY="{\"url\":\"$URL\",\"vQuality\":\"1080\",\"vCodec\":\"h264\"}"
+              ENDPOINT="$BASE/api/json"
+            else
+              BODY="{\"url\":\"$URL\",\"videoQuality\":\"1080\",\"youtubeVideoCodec\":\"h264\",\"alwaysProxy\":true}"
+              ENDPOINT="$BASE/"
+            fi
+
+            CODE=$(curl -A "Mozilla/5.0" -sS -o /tmp/r.json -w "%{http_code}"               -H "Accept: application/json" -H "Content-Type: application/json"               --connect-timeout 10 --max-time 45               -d "$BODY" "$ENDPOINT" || true)
+            echo "HTTP $CODE"
+            cat /tmp/r.json || true
+            echo
+
+            DL=$(python3 - <<'PY'
+import json
+try:
+    d=json.load(open('/tmp/r.json'))
+    print(d.get('url') or d.get('download') or '')
+except Exception:
+    print('')
+PY
+)
+            if [ -n "$DL" ]; then
+              echo "Downloading returned media URL"
+              if curl -A "Mozilla/5.0" -fL --connect-timeout 10 --max-time 180 "$DL" -o output/video.mp4; then
+                if [ -s output/video.mp4 ]; then
+                  file output/video.mp4
+                  OK=1
+                  return 0
+                fi
+              fi
+            fi
+            return 1
+          }
+
+          try_api "https://co.wuk.sh" "old" && exit 0
+          try_api "https://co.wuk.sh" "new" && exit 0
+          try_api "https://api.cobalt.tools" "new" && exit 0
+
+          echo "No cobalt endpoint succeeded"
+          exit 1
