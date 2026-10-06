@@ -1,4 +1,4 @@
-name: Bowen Contact Prepare
+name: Bowen Final Clip
 
 on:
   push:
@@ -9,27 +9,70 @@ permissions:
   contents: write
 
 jobs:
-  prepare:
+  extract:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           persist-credentials: true
 
-      - name: Install Pillow
-        run: python3 -m pip install --quiet pillow
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
 
-      - name: Make compact visual payload
+      - name: Download full source through loader.to
         shell: bash
         run: |
-          python3 -c 'from PIL import Image; import base64,os; src="video-download/review/bowen-contact.jpg"; out="video-download/review/bowen-contact-small.jpg"; b64="video-download/review/bowen-contact-small.b64"; img=Image.open(src).convert("RGB").resize((1929,817)); img.save(out,"JPEG",quality=55,optimize=True); payload=base64.b64encode(open(out,"rb").read()).decode("ascii"); open(b64,"w",encoding="utf-8").write(payload); print(os.path.getsize(out),len(payload))'
+          set -euo pipefail
+          mkdir -p output video-download/output
+          QUERY=$(python3 -c 'import urllib.parse; print(urllib.parse.urlencode({"url":"https://www.youtube.com/watch?v=mRif6sq9gBI","add_info":"1","format":"1080"}))')
+          GOT=0
+          for IP in 172.67.198.191 104.21.95.172; do
+            CODE=$(curl --resolve "loader.to:443:$IP" -A "Mozilla/5.0" -sS -o /tmp/info.json -w "%{http_code}" --connect-timeout 10 --max-time 45 "https://loader.to/api/download?$QUERY" || true)
+            if [ "$CODE" = "200" ]; then GOT=1; break; fi
+          done
+          test "$GOT" -eq 1
 
-      - name: Commit compact contact sheet
+          ID=$(jq -r '.id // empty' /tmp/info.json)
+          PROGRESS=$(jq -r '.progress_url // empty' /tmp/info.json)
+          test -n "$ID"
+          if [ -z "$PROGRESS" ]; then PROGRESS="https://p.savenow.to/api/progress?id=$ID"; fi
+
+          DL=""
+          for N in $(seq 1 150); do
+            curl -A "Mozilla/5.0" -sS --connect-timeout 10 --max-time 30 "$PROGRESS" -o /tmp/progress.json || true
+            SUCCESS=$(jq -r '.success // 0' /tmp/progress.json 2>/dev/null || echo 0)
+            DL=$(jq -r '.download_url // .download // empty' /tmp/progress.json 2>/dev/null || true)
+            if [ "$SUCCESS" = "1" ] && [ -n "$DL" ]; then break; fi
+            sleep 2
+          done
+          test -n "$DL"
+
+          curl -A "Mozilla/5.0" -fL --retry 2 --connect-timeout 15 --max-time 600 "$DL" -o output/full.mp4
+          ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1 output/full.mp4
+
+      - name: Extract Bowen goal sequence losslessly
+        run: |
+          ffmpeg -y -ss 00:08:58 -i output/full.mp4 -t 00:01:50 -map 0:v:0 -map 0:a:0? -c copy -avoid_negative_ts make_zero video-download/output/BOWEN_GOAL_VS_SOUTHAMPTON_2026.mp4
+          ffprobe -v error -show_entries stream=codec_name,width,height -show_entries format=duration,size -of json video-download/output/BOWEN_GOAL_VS_SOUTHAMPTON_2026.mp4
+          test "$(stat -c%s video-download/output/BOWEN_GOAL_VS_SOUTHAMPTON_2026.mp4)" -lt 99000000
+
+      - name: Commit final MP4
         shell: bash
         run: |
           git config user.name "ChatGPT Video Workflow"
           git config user.email "actions@users.noreply.github.com"
-          git add video-download/review/bowen-contact-small.jpg video-download/review/bowen-contact-small.b64
-          git commit -m "Add compact Bowen contact sheet payload" || exit 0
+          git add video-download/output/BOWEN_GOAL_VS_SOUTHAMPTON_2026.mp4
+          git commit -m "Add final Bowen Southampton goal source clip" || exit 0
           git push
+
+      - name: Keep short-lived artifact backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: bowen-final-goal
+          path: video-download/output/BOWEN_GOAL_VS_SOUTHAMPTON_2026.mp4
+          compression-level: 0
+          retention-days: 1
