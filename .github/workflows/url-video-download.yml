@@ -1,0 +1,72 @@
+name: URL Video Downloader
+
+on:
+  push:
+    paths:
+      - 'video-download/request.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install downloader
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade yt-dlp pytubefix
+
+      - name: Download video
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="$(tr -d '\r\n' < video-download/request.txt)"
+          mkdir -p output
+          echo "Downloading: $URL"
+
+          if yt-dlp             --no-playlist             --merge-output-format mp4             --remux-video mp4             -f "bv*+ba/b"             -o "output/downloaded.%(ext)s"             "$URL"; then
+            echo "yt-dlp succeeded"
+          else
+            echo "yt-dlp failed; trying pytubefix"
+            python - <<'PY'
+from pathlib import Path
+from pytubefix import YouTube
+
+url = Path("video-download/request.txt").read_text().strip()
+yt = YouTube(url)
+stream = (
+    yt.streams
+      .filter(progressive=True, file_extension="mp4")
+      .order_by("resolution")
+      .desc()
+      .first()
+)
+if stream is None:
+    raise RuntimeError("No progressive MP4 stream found")
+stream.download(output_path="output", filename="downloaded.mp4")
+print("pytubefix succeeded")
+PY
+          fi
+
+          FILE="$(find output -maxdepth 1 -type f \( -name '*.mp4' -o -name '*.mkv' -o -name '*.webm' \) | head -n 1)"
+          test -n "$FILE"
+          if [ "$FILE" != "output/downloaded.mp4" ]; then
+            ffmpeg -y -i "$FILE" -c copy output/downloaded.mp4 ||             ffmpeg -y -i "$FILE" -c:v libx264 -c:a aac output/downloaded.mp4
+          fi
+
+          ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1 output/downloaded.mp4
+
+      - name: Upload MP4
+        uses: actions/upload-artifact@v4
+        with:
+          name: downloaded-video
+          path: output/downloaded.mp4
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
