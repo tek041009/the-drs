@@ -1,0 +1,56 @@
+name: Rarely Told Quality Demo V3
+on:
+  push:
+    branches: [rarely-told-quality-v3]
+    paths:
+      - '.github/workflows/rarely-told-quality-v3.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: rarely-told-quality-v3
+
+      - name: Fetch CC0 Kenney asset library
+        uses: actions/checkout@v4
+        with:
+          repository: series-ai/jam-ready-assets
+          path: assets
+          lfs: true
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install free/open-source render stack
+        run: |
+          pip install kokoro-onnx soundfile numpy
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg blender xvfb libegl1 libgl1-mesa-dri libglx-mesa0 git-lfs
+
+      - name: Make sure LFS assets are materialized
+        run: |
+          cd assets
+          git lfs pull
+
+      - name: Generate free narrator + sound design
+        run: python rarely_told_quality_audio.py
+
+      - name: Render asset-quality 3D animation
+        run: xvfb-run -a blender --background --python rarely_told_quality_blender.py
+
+      - name: Finish 30-second opening
+        run: |
+          ffmpeg -y -loglevel error -i rarely_told_assets_silent.mp4 -i mix.wav -t 30             -vf "fps=24,scale=1280:720:flags=lanczos,unsharp=5:5:0.35:5:5:0.0"             -c:v libx264 -preset fast -crf 18 -pix_fmt yuv420p             -c:a aac -b:a 192k -movflags +faststart Rarely_Told_Quality_First_30s_V3.mp4
+          ffprobe -v error -show_entries format=duration,size -of default=nw=1 Rarely_Told_Quality_First_30s_V3.mp4
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rarely-told-quality-first-30s-v3
+          path: Rarely_Told_Quality_First_30s_V3.mp4
+          retention-days: 7
