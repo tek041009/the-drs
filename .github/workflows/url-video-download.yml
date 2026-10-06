@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   download:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -19,83 +19,49 @@ jobs:
 
       - name: Install downloader
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install --upgrade "yt-dlp[default,curl-cffi]" pytubefix
+          python3 -m pip install --upgrade yt-dlp pytubefix
+          command -v ffmpeg || brew install ffmpeg
 
       - name: Resolve request
         id: request
         shell: bash
         run: |
           set -euo pipefail
-          REQUEST_FILE="$(find video-download/requests -maxdepth 1 -type f -name '*.txt' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
-          test -n "$REQUEST_FILE"
+          REQUEST_FILE="$(ls -t video-download/requests/*.txt | head -n 1)"
           URL="$(head -n 1 "$REQUEST_FILE" | tr -d '\r\n')"
-          test -n "$URL"
-          VIDEO_ID="$(python -c 'import re,sys,urllib.parse as u; s=sys.argv[1]; q=u.parse_qs(u.urlparse(s).query); print((q.get("v") or [re.search(r"(?:youtu\\.be/|shorts/)([A-Za-z0-9_-]{11})",s).group(1)])[0])' "$URL")"
           echo "url=$URL" >> "$GITHUB_OUTPUT"
-          echo "video_id=$VIDEO_ID" >> "$GITHUB_OUTPUT"
 
       - name: Download video
         shell: bash
         env:
           VIDEO_URL: ${{ steps.request.outputs.url }}
-          VIDEO_ID: ${{ steps.request.outputs.video_id }}
         run: |
           set -uo pipefail
           mkdir -p output
           OK=0
 
-          echo "Trying Piped public APIs first"
-          for API in             "https://pipedapi.kavin.rocks"             "https://pipedapi.leptons.xyz"             "https://piped-api.privacy.com.de"             "https://api.piped.private.coffee"             "https://pipedapi.adminforge.de"             "https://api.piped.yt"; do
-            echo "Piped instance: $API"
-            rm -f /tmp/piped.json output/downloaded.mp4 output/video.* output/audio.*
-            if curl -fsSL --max-time 20 "$API/streams/$VIDEO_ID" -o /tmp/piped.json; then
-              DIRECT="$(jq -r '[.videoStreams[]? | select(.videoOnly == false and (.mimeType // "" | contains("video/mp4")))] | sort_by(.height // 0) | last | .url // empty' /tmp/piped.json)"
-              if [ -n "$DIRECT" ]; then
-                echo "Found combined MP4 stream"
-                if curl -fL --retry 2 --connect-timeout 15 --max-time 180 "$DIRECT" -o output/downloaded.mp4; then
-                  ffprobe -v error output/downloaded.mp4 >/dev/null 2>&1 && OK=1
-                fi
-              fi
-
-              if [ "$OK" -eq 0 ]; then
-                VURL="$(jq -r '[.videoStreams[]? | select(.videoOnly == true and (.mimeType // "" | contains("video/mp4")))] | sort_by(.height // 0) | last | .url // empty' /tmp/piped.json)"
-                AURL="$(jq -r '[.audioStreams[]? | select((.mimeType // "" | contains("audio/mp4")))] | sort_by(.bitrate // 0) | last | .url // empty' /tmp/piped.json)"
-                if [ -n "$VURL" ] && [ -n "$AURL" ]; then
-                  echo "Found separate MP4 video/audio streams"
-                  if curl -fL --retry 2 --connect-timeout 15 --max-time 180 "$VURL" -o output/video.mp4 &&                      curl -fL --retry 2 --connect-timeout 15 --max-time 180 "$AURL" -o output/audio.m4a &&                      ffmpeg -y -i output/video.mp4 -i output/audio.m4a -c copy output/downloaded.mp4; then
-                    ffprobe -v error output/downloaded.mp4 >/dev/null 2>&1 && OK=1
-                  fi
-                fi
-              fi
-            fi
-            if [ "$OK" -eq 1 ]; then break; fi
-          done
-
-          if [ "$OK" -eq 0 ]; then
-            echo "Piped failed; trying direct YouTube clients"
-            try_client () {
-              CLIENT="$1"
-              FORMAT="$2"
-              rm -f output/downloaded.*
-              yt-dlp --no-playlist --js-runtimes node                 --extractor-args "youtube:player_client=$CLIENT"                 --merge-output-format mp4 --remux-video mp4                 -f "$FORMAT" -o "output/downloaded.%(ext)s" "$VIDEO_URL"
-            }
-            try_client "android_vr" "bv*+ba/b" && OK=1
-            if [ "$OK" -eq 0 ]; then try_client "web_embedded" "bv*+ba/b" && OK=1; fi
-            if [ "$OK" -eq 0 ]; then try_client "web_safari" "b[ext=mp4]/b" && OK=1; fi
-          fi
-
-          if [ "$OK" -eq 0 ]; then
-            echo "Direct clients failed; trying pytubefix"
+          try_client () {
+            CLIENT="$1"
+            FORMAT="$2"
+            echo "Trying client $CLIENT"
             rm -f output/downloaded.*
-            python video-download/download_fallback.py "$VIDEO_URL" && OK=1
-          fi
+            yt-dlp --no-playlist --js-runtimes node               --extractor-args "youtube:player_client=$CLIENT"               --merge-output-format mp4 --remux-video mp4               -f "$FORMAT" -o "output/downloaded.%(ext)s" "$VIDEO_URL"
+          }
 
+          try_client "android_vr" "bv*+ba/b" && OK=1
+          if [ "$OK" -eq 0 ]; then try_client "web_embedded" "bv*+ba/b" && OK=1; fi
+          if [ "$OK" -eq 0 ]; then try_client "tv" "bv*+ba/b" && OK=1; fi
+          if [ "$OK" -eq 0 ]; then try_client "web_safari" "b[ext=mp4]/b" && OK=1; fi
           if [ "$OK" -eq 0 ]; then
-            echo "All download strategies failed"
-            exit 1
+            python3 video-download/download_fallback.py "$VIDEO_URL" && OK=1
           fi
+          if [ "$OK" -eq 0 ]; then exit 1; fi
 
+          FILE="$(find output -maxdepth 1 -type f \( -name '*.mp4' -o -name '*.mkv' -o -name '*.webm' \) | head -n 1)"
+          test -n "$FILE"
+          if [ "$FILE" != "output/downloaded.mp4" ]; then
+            ffmpeg -y -i "$FILE" -c copy output/downloaded.mp4 || ffmpeg -y -i "$FILE" -c:v libx264 -c:a aac output/downloaded.mp4
+          fi
           ffprobe -v error -show_entries stream=codec_name,width,height -show_entries format=duration,size -of json output/downloaded.mp4
 
       - name: Upload MP4
