@@ -18,6 +18,6 @@ jobs:
         run: |
           set -e
           echo "Fetching instance directory"
-          curl -A "Mozilla/5.0" -fsSL --connect-timeout 10 --max-time 30 "https://instances.cobalt.best/api/instances.json" -o /tmp/instances.json
+          curl -k -A "Mozilla/5.0" -fsSL --connect-timeout 10 --max-time 30 "https://instances.cobalt.best/api/instances.json" -o /tmp/instances.json
           wc -c /tmp/instances.json
           head -c 20000 /tmp/instances.json
