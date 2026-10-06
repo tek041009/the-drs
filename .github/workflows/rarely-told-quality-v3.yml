@@ -37,7 +37,7 @@ jobs:
         run: |
           pip install kokoro-onnx soundfile numpy
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg blender xvfb libegl1 libgl1-mesa-dri libglx-mesa0 git-lfs
+          sudo apt-get install -y -qq ffmpeg blender xvfb libegl1 libgl1-mesa-dri libglx-mesa0 git-lfs python3-numpy
 
       - name: Make sure LFS assets are materialized
         run: |
@@ -48,7 +48,9 @@ jobs:
         run: python rarely_told_quality_audio.py
 
       - name: Render asset-quality 3D animation
-        run: xvfb-run -a blender --background --python rarely_told_quality_blender.py
+        run: |
+          xvfb-run -a blender --background --python rarely_told_quality_blender.py
+          test -s rarely_told_assets_silent.mp4
 
       - name: Finish 30-second opening
         run: |
