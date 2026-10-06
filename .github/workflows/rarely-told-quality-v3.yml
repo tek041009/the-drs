@@ -22,6 +22,12 @@ jobs:
           path: assets
           lfs: true
           fetch-depth: 1
+          sparse-checkout: |
+            kenney-animated-characters-protagonists/3D/characters
+            kenney-city-kit-commercial/3D/city/Models/GLB format
+            kenney-city-kit-roads/3D/city/Models/GLB format
+            kenney-furniture-kit/3D/interior-furniture/Models/GLTF format
+          sparse-checkout-cone-mode: false
 
       - uses: actions/setup-python@v5
         with:
