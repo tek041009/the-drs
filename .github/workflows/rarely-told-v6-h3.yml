@@ -1,0 +1,38 @@
+name: Rarely Told V6 H3 Current-Gen Opening
+on:
+  push:
+    branches: [rarely-told-v5-ltx25]
+    paths:
+      - 'h3_trigger.txt'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: rarely-told-v5-ltx25
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install free automation stack
+        run: |
+          pip install gradio_client kokoro-onnx soundfile
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+      - name: Generate full 30-second H3 opening automatically
+        run: python build_rarely_told_v6_h3.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rarely-told-v6-h3-output
+          path: |
+            Rarely_Told_AI_First_30s_V6_H3.mp4
+            victor_identity.jpg
+            clip1.mp4
+            clip2.mp4
+            clip3.mp4
+          if-no-files-found: warn
+          retention-days: 7
