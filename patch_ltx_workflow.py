@@ -39,6 +39,9 @@ for link in w["links"]:
 # Ensure node 87 output advertises links.
 nodes[87]["outputs"][0]["links"]=[188,189]
 nodes[81]["outputs"][0]["links"]=[]
+# Remove the now-unused stock CLIP loader so strict local validation does not reject it.
+w["nodes"]=[n for n in w["nodes"] if n["id"] != 81]
+w["links"]=[ln for ln in w["links"] if ln[1] != 81 and ln[3] != 81]
 
 with open(p,"w",encoding="utf-8") as f:
     json.dump(w,f,separators=(",",":"))
