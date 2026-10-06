@@ -20,10 +20,7 @@ jobs:
       - name: Install downloader
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --upgrade "yt-dlp[default,curl-cffi]" pytubefix yt-dlp-getpot-wpc
-          BROWSER="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
-          test -n "$BROWSER"
-          echo "BROWSER=$BROWSER" >> "$GITHUB_ENV"
+          python -m pip install --upgrade "yt-dlp[default,curl-cffi]" pytubefix
 
       - name: Resolve request
         id: request
@@ -41,15 +38,30 @@ jobs:
         env:
           VIDEO_URL: ${{ steps.request.outputs.url }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           mkdir -p output
-          echo "Downloading: $VIDEO_URL"
 
-          if xvfb-run -a yt-dlp --no-playlist --js-runtimes node --extractor-args "youtube:player_client=mweb" --extractor-args "youtubepot-wpc:browser_path=$BROWSER" --merge-output-format mp4 --remux-video mp4 -f "bv*+ba/b" -o "output/downloaded.%(ext)s" "$VIDEO_URL"; then
-            echo "yt-dlp succeeded"
-          else
-            echo "yt-dlp failed; trying pytubefix"
-            python video-download/download_fallback.py "$VIDEO_URL"
+          try_client () {
+            CLIENT="$1"
+            FORMAT="$2"
+            echo "Trying YouTube client: $CLIENT"
+            rm -f output/downloaded.*
+            yt-dlp --no-playlist --js-runtimes node               --extractor-args "youtube:player_client=$CLIENT"               --merge-output-format mp4 --remux-video mp4               -f "$FORMAT"               -o "output/downloaded.%(ext)s"               "$VIDEO_URL"
+          }
+
+          OK=0
+          try_client "android_vr" "bv*+ba/b" && OK=1
+          if [ "$OK" -eq 0 ]; then try_client "web_embedded" "bv*+ba/b" && OK=1; fi
+          if [ "$OK" -eq 0 ]; then try_client "tv" "bv*+ba/b" && OK=1; fi
+          if [ "$OK" -eq 0 ]; then try_client "web_safari" "b[ext=mp4]/b" && OK=1; fi
+          if [ "$OK" -eq 0 ]; then
+            echo "yt-dlp clients failed; trying pytubefix"
+            rm -f output/downloaded.*
+            python video-download/download_fallback.py "$VIDEO_URL" && OK=1
+          fi
+          if [ "$OK" -eq 0 ]; then
+            echo "All download strategies failed"
+            exit 1
           fi
 
           FILE="$(find output -maxdepth 1 -type f \( -name '*.mp4' -o -name '*.mkv' -o -name '*.webm' \) | head -n 1)"
@@ -57,7 +69,6 @@ jobs:
           if [ "$FILE" != "output/downloaded.mp4" ]; then
             ffmpeg -y -i "$FILE" -c copy output/downloaded.mp4 || ffmpeg -y -i "$FILE" -c:v libx264 -c:a aac output/downloaded.mp4
           fi
-
           ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1 output/downloaded.mp4
 
       - name: Upload MP4
