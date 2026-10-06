@@ -51,8 +51,7 @@ jobs:
 
       - name: Generate genuine AI animated test shot
         run: |
-          comfy --workspace ./runtime --json run --workflow workflow.json --wait > comfy_run.json
-          cat comfy_run.json
+          comfy --workspace ./runtime --json run --workflow workflow.json --where local --host 127.0.0.1 --port 8188 --wait --timeout 3600 2>&1 | tee comfy_run.json
           find runtime/ComfyUI/output -type f -maxdepth 2 -printf '%p %s bytes\n' || true
           SRC=$(find runtime/ComfyUI/output -type f \( -name '*.webm' -o -name '*.mp4' \) | head -n 1)
           test -n "$SRC"
