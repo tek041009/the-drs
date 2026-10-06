@@ -1,0 +1,27 @@
+name: Rarely Told V5 Current Model Shot
+on:
+  push:
+    branches: [rarely-told-v5-ltx25]
+    paths:
+      - '.github/workflows/rarely-told-v5-shot.yml'
+      - 'generate_ltx25_shot.py'
+  workflow_dispatch:
+
+jobs:
+  shot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: rarely-told-v5-ltx25
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install gradio_client
+      - run: python generate_ltx25_shot.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rarely-told-v5-shot1
+          path: Rarely_Told_V5_Shot1.mp4
+          retention-days: 7
