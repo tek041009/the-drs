@@ -1,0 +1,66 @@
+name: Rarely Told AI Video V4 Test
+on:
+  push:
+    branches: [rarely-told-ai-video-v4]
+    paths:
+      - '.github/workflows/rarely-told-ai-video-v4.yml'
+      - 'patch_ltx_workflow.py'
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: rarely-told-ai-video-v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install free local AI video stack
+        run: |
+          python -m pip install --upgrade pip
+          pip install comfy-cli "huggingface_hub[hf_xet]"
+          comfy --skip-prompt --workspace ./runtime install --fast-deps --cpu --skip-manager
+          git clone --depth 1 https://github.com/city96/ComfyUI-GGUF.git runtime/ComfyUI/custom_nodes/ComfyUI-GGUF
+          pip install -r runtime/ComfyUI/custom_nodes/ComfyUI-GGUF/requirements.txt
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+
+      - name: Download only the free quantized models needed
+        run: |
+          mkdir -p runtime/ComfyUI/models/diffusion_models runtime/ComfyUI/models/text_encoders runtime/ComfyUI/models/vae
+          hf download city96/LTX-Video-0.9.6-distilled-gguf ltxv-2b-0.9.6-distilled-04-25-Q4_K_S.gguf --local-dir runtime/ComfyUI/models/diffusion_models
+          hf download city96/t5-v1_1-xxl-encoder-gguf t5-v1_1-xxl-encoder-Q3_K_S.gguf --local-dir runtime/ComfyUI/models/text_encoders
+          hf download city96/LTX-Video-0.9.6-distilled-gguf LTX-Video-0.9.6-VAE-BF16.safetensors --local-dir runtime/ComfyUI/models/vae
+          df -h
+
+      - name: Get and patch the official distilled LTX workflow
+        run: |
+          curl -L --fail --retry 4 -o workflow.json https://huggingface.co/city96/LTX-Video-0.9.6-distilled-gguf/resolve/704526df0df01044eb40acd2d7d945e5e313cdb9/media/ltx-video-2b-v0.9.6-distilled_workflow.json
+          python patch_ltx_workflow.py workflow.json
+
+      - name: Start local ComfyUI CPU server
+        run: |
+          comfy --workspace ./runtime launch --background -- --cpu --listen 127.0.0.1 --port 8188
+          sleep 12
+          curl --fail http://127.0.0.1:8188/system_stats
+
+      - name: Generate genuine AI animated test shot
+        run: |
+          comfy --workspace ./runtime --json run --workflow workflow.json --wait > comfy_run.json
+          cat comfy_run.json
+          find runtime/ComfyUI/output -type f -maxdepth 2 -printf '%p %s bytes\n' || true
+          SRC=$(find runtime/ComfyUI/output -type f \( -name '*.webm' -o -name '*.mp4' \) | head -n 1)
+          test -n "$SRC"
+          ffmpeg -y -loglevel error -i "$SRC" -vf "scale=1280:720:flags=lanczos" -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -an Rarely_Told_V4_AI_Test_Shot.mp4
+          ffprobe -v error -show_entries format=duration,size -of default=nw=1 Rarely_Told_V4_AI_Test_Shot.mp4
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rarely-told-v4-ai-test-shot
+          path: Rarely_Told_V4_AI_Test_Shot.mp4
+          retention-days: 7
