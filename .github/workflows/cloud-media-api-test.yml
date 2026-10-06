@@ -1,4 +1,4 @@
-name: Bowen Goal Extract
+name: Bowen Goal Locate
 
 on:
   push:
@@ -6,13 +6,18 @@ on:
       - 'video-download/cloud-proxy-test.txt'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  extract:
+  locate:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
       - name: Install ffmpeg
         run: |
           sudo apt-get update -qq
@@ -22,9 +27,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          URL="https://www.youtube.com/watch?v=mRif6sq9gBI"
-          mkdir -p output
-
+          mkdir -p output video-download/review
           QUERY=$(python3 -c 'import urllib.parse; print(urllib.parse.urlencode({"url":"https://www.youtube.com/watch?v=mRif6sq9gBI","add_info":"1","format":"1080"}))')
           GOT=0
           for IP in 172.67.198.191 104.21.95.172; do
@@ -32,12 +35,9 @@ jobs:
             if [ "$CODE" = "200" ]; then GOT=1; break; fi
           done
           test "$GOT" -eq 1
-
           ID=$(jq -r '.id // empty' /tmp/info.json)
           PROGRESS=$(jq -r '.progress_url // empty' /tmp/info.json)
-          test -n "$ID"
           if [ -z "$PROGRESS" ]; then PROGRESS="https://p.savenow.to/api/progress?id=$ID"; fi
-
           DL=""
           for N in $(seq 1 150); do
             curl -A "Mozilla/5.0" -sS --connect-timeout 10 --max-time 30 "$PROGRESS" -o /tmp/progress.json || true
@@ -47,19 +47,20 @@ jobs:
             sleep 2
           done
           test -n "$DL"
-
           curl -A "Mozilla/5.0" -fL --retry 2 --connect-timeout 15 --max-time 600 "$DL" -o output/full.mp4
-          ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1 output/full.mp4
 
-      - name: Make late-match review clip
+      - name: Create timestamped contact sheet
+        shell: bash
         run: |
-          ffmpeg -y -ss 00:07:30 -i output/full.mp4 -t 00:03:54             -vf "scale='min(1280,iw)':-2"             -c:v libx264 -preset veryfast -b:v 2200k -maxrate 2600k -bufsize 4400k             -c:a aac -b:a 128k -movflags +faststart             output/bowen-review.mp4
-          ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1 output/bowen-review.mp4
+          ffmpeg -y -i output/full.mp4 -vf "trim=start=450:end=684,setpts=PTS-STARTPTS+450/TB,fps=1/5,scale=480:-2,drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='%{pts\\:hms}':x=12:y=12:fontsize=28:fontcolor=white:box=1:boxcolor=black@0.75,tile=8x6:padding=2:margin=2" -frames:v 1 -q:v 3 video-download/review/bowen-contact.jpg
+          file video-download/review/bowen-contact.jpg
+          ls -lh video-download/review/bowen-contact.jpg
 
-      - name: Upload review clip
-        uses: actions/upload-artifact@v4
-        with:
-          name: bowen-review
-          path: output/bowen-review.mp4
-          compression-level: 0
-          retention-days: 1
+      - name: Commit contact sheet
+        shell: bash
+        run: |
+          git config user.name "ChatGPT Video Workflow"
+          git config user.email "actions@users.noreply.github.com"
+          git add video-download/review/bowen-contact.jpg
+          git commit -m "Add Bowen goal contact sheet" || exit 0
+          git push
