@@ -1,4 +1,4 @@
-name: Cloud Media API Test
+name: Bowen Goal Extract
 
 on:
   push:
@@ -9,11 +9,16 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  extract:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Convert and download Bowen through loader.to
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+
+      - name: Download full highlights through loader.to
         shell: bash
         run: |
           set -euo pipefail
@@ -24,48 +29,37 @@ jobs:
           GOT=0
           for IP in 172.67.198.191 104.21.95.172; do
             CODE=$(curl --resolve "loader.to:443:$IP" -A "Mozilla/5.0" -sS -o /tmp/info.json -w "%{http_code}" --connect-timeout 10 --max-time 45 "https://loader.to/api/download?$QUERY" || true)
-            echo "loader.to via $IP -> HTTP $CODE"
             if [ "$CODE" = "200" ]; then GOT=1; break; fi
           done
           test "$GOT" -eq 1
 
-          TITLE=$(jq -r '.title // .info.title // empty' /tmp/info.json)
           ID=$(jq -r '.id // empty' /tmp/info.json)
           PROGRESS=$(jq -r '.progress_url // empty' /tmp/info.json)
-          echo "Title: $TITLE"
-          echo "Worker: $ID"
           test -n "$ID"
-          if [ -z "$PROGRESS" ]; then
-            PROGRESS="https://p.savenow.to/api/progress?id=$ID"
-          fi
-          echo "Progress host: $(python3 -c 'import sys,urllib.parse as u; print(u.urlparse(sys.argv[1]).netloc)' "$PROGRESS")"
+          if [ -z "$PROGRESS" ]; then PROGRESS="https://p.savenow.to/api/progress?id=$ID"; fi
 
           DL=""
           for N in $(seq 1 150); do
             curl -A "Mozilla/5.0" -sS --connect-timeout 10 --max-time 30 "$PROGRESS" -o /tmp/progress.json || true
             SUCCESS=$(jq -r '.success // 0' /tmp/progress.json 2>/dev/null || echo 0)
-            TEXT=$(jq -r '.text // .message // empty' /tmp/progress.json 2>/dev/null || true)
-            PCT=$(jq -r '.progress // empty' /tmp/progress.json 2>/dev/null || true)
-            echo "Poll $N success=$SUCCESS progress=$PCT text=$TEXT"
             DL=$(jq -r '.download_url // .download // empty' /tmp/progress.json 2>/dev/null || true)
-            if [ "$SUCCESS" = "1" ] && [ -n "$DL" ]; then
-              break
-            fi
+            if [ "$SUCCESS" = "1" ] && [ -n "$DL" ]; then break; fi
             sleep 2
           done
-
           test -n "$DL"
-          echo "Download host: $(python3 -c 'import sys,urllib.parse as u; print(u.urlparse(sys.argv[1]).netloc)' "$DL")"
 
-          curl -A "Mozilla/5.0" -fL --retry 2 --connect-timeout 15 --max-time 600 "$DL" -o output/bowen-southampton.mp4
-          test -s output/bowen-southampton.mp4
-          file output/bowen-southampton.mp4
-          wc -c output/bowen-southampton.mp4
+          curl -A "Mozilla/5.0" -fL --retry 2 --connect-timeout 15 --max-time 600 "$DL" -o output/full.mp4
+          ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1 output/full.mp4
 
-      - name: Upload Bowen MP4 artifact
+      - name: Make late-match review clip
+        run: |
+          ffmpeg -y -ss 00:07:30 -i output/full.mp4 -t 00:03:54             -vf "scale='min(1280,iw)':-2"             -c:v libx264 -preset veryfast -b:v 2200k -maxrate 2600k -bufsize 4400k             -c:a aac -b:a 128k -movflags +faststart             output/bowen-review.mp4
+          ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1 output/bowen-review.mp4
+
+      - name: Upload review clip
         uses: actions/upload-artifact@v4
         with:
-          name: bowen-southampton
-          path: output/bowen-southampton.mp4
+          name: bowen-review
+          path: output/bowen-review.mp4
           compression-level: 0
           retention-days: 1
