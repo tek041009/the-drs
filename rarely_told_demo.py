@@ -10,6 +10,14 @@ OUT="Rarely_Told_First_30s_Free.mp4"
 ROOT=os.path.dirname(os.path.abspath(__file__))
 os.chdir(ROOT)
 
+def download(url, fn):
+    req=urllib.request.Request(url,headers={"User-Agent":"RarelyTold/1.0 (+https://github.com/tek041009/the-drs)"})
+    with urllib.request.urlopen(req,timeout=120) as r, open(fn,"wb") as w:
+        while True:
+            chunk=r.read(1024*1024)
+            if not chunk: break
+            w.write(chunk)
+
 URLS={
 "tower":"https://commons.wikimedia.org/wiki/Special:Redirect/file/Tour_Eiffel_publicit%C3%A9_Citro%C3%ABn_1925.jpg",
 "lustig":"https://commons.wikimedia.org/wiki/Special:Redirect/file/Victor_Lustig_Mugshot.jpeg",
@@ -20,15 +28,15 @@ for name,url in URLS.items():
     fn=name+ext
     if not os.path.exists(fn):
         print("downloading",name,flush=True)
-        urllib.request.urlretrieve(url,fn)
+        download(url,fn)
 
 # ---------- narration: free/open-source Kokoro ----------
 model="kokoro-v1.0.int8.onnx"
 voices="voices-v1.0.bin"
 if not os.path.exists(model):
-    urllib.request.urlretrieve("https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/kokoro-v1.0.int8.onnx",model)
+    download("https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/kokoro-v1.0.int8.onnx",model)
 if not os.path.exists(voices):
-    urllib.request.urlretrieve("https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/voices-v1.0.bin",voices)
+    download("https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/voices-v1.0.bin",voices)
 
 script=("In 1925, one man managed to sell the Eiffel Tower. Not a souvenir. The actual tower. "
         "His name was Victor Lustig, and he had a talent for making impossible lies sound completely reasonable. "
