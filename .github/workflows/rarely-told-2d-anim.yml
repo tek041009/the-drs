@@ -1,0 +1,31 @@
+name: Rarely Told 2D Animated Demo
+on:
+  push:
+    branches: [rarely-told-2d-anim]
+    paths:
+      - '.github/workflows/rarely-told-2d-anim.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: rarely-told-2d-anim
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install only free/open-source tools
+        run: |
+          pip install kokoro-onnx soundfile numpy pillow
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+      - name: Render the animated first 30 seconds
+        run: python rarely_told_2d.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rarely-told-animated-first-30s-v2
+          path: Rarely_Told_Animated_First_30s_V2.mp4
+          retention-days: 7
