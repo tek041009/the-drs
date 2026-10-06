@@ -17,25 +17,13 @@ jobs:
         with:
           persist-credentials: true
 
+      - name: Install Pillow
+        run: python3 -m pip install --quiet pillow
+
       - name: Make compact visual payload
         shell: bash
         run: |
-          python3 -m pip install --quiet pillow
-          python3 - <<'PY'
-from PIL import Image
-import base64
-src="video-download/review/bowen-contact.jpg"
-img=Image.open(src).convert("RGB")
-img=img.resize((1929,817))
-out="video-download/review/bowen-contact-small.jpg"
-img.save(out,"JPEG",quality=62,optimize=True)
-with open(out,"rb") as f:
-    payload=base64.b64encode(f.read()).decode("ascii")
-with open("video-download/review/bowen-contact-small.b64","w",encoding="utf-8") as f:
-    f.write(payload)
-print("jpeg_bytes", __import__("os").path.getsize(out))
-print("base64_chars", len(payload))
-PY
+          python3 -c 'from PIL import Image; import base64,os; src="video-download/review/bowen-contact.jpg"; out="video-download/review/bowen-contact-small.jpg"; b64="video-download/review/bowen-contact-small.b64"; img=Image.open(src).convert("RGB").resize((1929,817)); img.save(out,"JPEG",quality=55,optimize=True); payload=base64.b64encode(open(out,"rb").read()).decode("ascii"); open(b64,"w",encoding="utf-8").write(payload); print(os.path.getsize(out),len(payload))'
 
       - name: Commit compact contact sheet
         shell: bash
