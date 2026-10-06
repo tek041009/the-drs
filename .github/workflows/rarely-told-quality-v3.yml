@@ -4,6 +4,8 @@ on:
     branches: [rarely-told-quality-v3]
     paths:
       - '.github/workflows/rarely-told-quality-v3.yml'
+      - 'rarely_told_quality_blender.py'
+      - 'rarely_told_quality_audio.py'
   workflow_dispatch:
 
 jobs:
