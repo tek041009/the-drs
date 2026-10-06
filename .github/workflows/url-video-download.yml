@@ -3,7 +3,7 @@ name: URL Video Downloader
 on:
   push:
     paths:
-      - 'video-download/requests/*.txt'
+      - 'video-download/request.txt'
   workflow_dispatch:
 
 permissions:
@@ -11,123 +11,54 @@ permissions:
 
 jobs:
   download:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: [self-hosted, Windows]
+    timeout-minutes: 20
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve request
-        id: request
-        shell: bash
+      - name: Read request
+        shell: powershell
         run: |
-          set -euo pipefail
-          REQUEST_FILE="$(find video-download/requests -maxdepth 1 -type f -name '*.txt' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
-          URL="$(head -n 1 "$REQUEST_FILE" | tr -d '\r\n')"
-          VIDEO_ID="$(python3 -c 'import re,sys,urllib.parse as u; s=sys.argv[1]; q=u.parse_qs(u.urlparse(s).query); m=re.search(r"(?:youtu\\.be/|shorts/)([A-Za-z0-9_-]{11})",s); print((q.get("v") or ([m.group(1)] if m else []))[0])' "$URL")"
-          echo "video_id=$VIDEO_ID" >> "$GITHUB_OUTPUT"
+          $url = (Get-Content "video-download/request.txt" -TotalCount 1).Trim()
+          if (-not $url) { throw "request.txt has no URL" }
+          "VIDEO_URL=$url" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: Resolve via public frontends
-        shell: bash
-        env:
-          VIDEO_ID: ${{ steps.request.outputs.video_id }}
+      - name: Download video
+        shell: powershell
         run: |
-          set -uo pipefail
-          mkdir -p output
-          OK=0
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path output | Out-Null
+          Remove-Item "output\downloaded-video.*" -Force -ErrorAction SilentlyContinue
 
-          PIPED=(
-            "https://pipedapi.kavin.rocks"
-            "https://pipedapi.leptons.xyz"
-            "https://pipedapi.nosebs.ru"
-            "https://pipedapi-libre.kavin.rocks"
-            "https://pipedapi.adminforge.de"
-            "https://pipedapi.owo.si"
-            "https://pipedapi.ducks.party"
-            "https://piped-api.codespace.cz"
-            "https://pipedapi.reallyaweso.me"
-            "https://api.piped.private.coffee"
-            "https://pipedapi.darkness.services"
-            "https://pipedapi.orangenet.cc"
-            "https://pipedapi.astartes.nl"
-            "https://piped-api.osphost.fi"
-            "https://pipedapi.simpleprivacy.fr"
-            "https://piapi.ggtyler.dev"
-            "https://api.watch.pluto.lat"
-            "https://piped-backend.seitan-ayoub.lol"
-          )
+          Write-Host "Downloading $env:VIDEO_URL"
+          & py -m yt_dlp --no-playlist --merge-output-format mp4 --remux-video mp4 -f "bv*+ba/b" -o "output/downloaded-video.%(ext)s" $env:VIDEO_URL
 
-          for API in "${PIPED[@]}"; do
-            echo "PIPED $API"
-            rm -f /tmp/info.json output/downloaded.mp4 output/video.mp4 output/audio.m4a
-            if curl -A "Mozilla/5.0" -fsSL --connect-timeout 4 --max-time 10 "$API/streams/$VIDEO_ID" -o /tmp/info.json; then
-              TITLE="$(jq -r '.title // empty' /tmp/info.json 2>/dev/null)"
-              echo "Resolved title: $TITLE"
-              DIRECT="$(jq -r '[.videoStreams[]? | select(.videoOnly == false and ((.mimeType // "") | contains("video/mp4")))] | sort_by(.height // 0) | last | .url // empty' /tmp/info.json 2>/dev/null)"
-              if [ -n "$DIRECT" ]; then
-                echo "Downloading combined stream"
-                if curl -A "Mozilla/5.0" -fL --retry 1 --connect-timeout 5 --max-time 180 "$DIRECT" -o output/downloaded.mp4 && ffprobe -v error output/downloaded.mp4 >/dev/null 2>&1; then
-                  OK=1
-                fi
-              fi
-              if [ "$OK" -eq 0 ]; then
-                VURL="$(jq -r '[.videoStreams[]? | select(.videoOnly == true and ((.mimeType // "") | contains("video/mp4")))] | sort_by(.height // 0) | last | .url // empty' /tmp/info.json 2>/dev/null)"
-                AURL="$(jq -r '[.audioStreams[]? | select(((.mimeType // "") | contains("audio/mp4")))] | sort_by(.bitrate // 0) | last | .url // empty' /tmp/info.json 2>/dev/null)"
-                if [ -n "$VURL" ] && [ -n "$AURL" ]; then
-                  if curl -A "Mozilla/5.0" -fL --retry 1 --connect-timeout 5 --max-time 180 "$VURL" -o output/video.mp4 &&                      curl -A "Mozilla/5.0" -fL --retry 1 --connect-timeout 5 --max-time 180 "$AURL" -o output/audio.m4a &&                      ffmpeg -y -i output/video.mp4 -i output/audio.m4a -c copy output/downloaded.mp4 &&                      ffprobe -v error output/downloaded.mp4 >/dev/null 2>&1; then
-                    OK=1
-                  fi
-                fi
-              fi
-            fi
-            if [ "$OK" -eq 1 ]; then echo "SUCCESS via $API"; break; fi
-          done
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "yt-dlp failed; trying pytubefix"
+            & py video-download/download_fallback.py $env:VIDEO_URL
+            if ($LASTEXITCODE -ne 0) { throw "All download methods failed" }
+          }
 
-          if [ "$OK" -eq 0 ]; then
-            INVIDIOUS=(
-              "https://inv.nadeko.net"
-              "https://invidious.nerdvpn.de"
-              "https://yt.chocolatemoo53.com"
-              "https://invidious.tiekoetter.com"
-              "https://yewtu.be"
-              "https://yt.artemislena.eu"
-              "https://invidious.flokinet.to"
-              "https://invidious.private.coffee"
-            )
-            for HOST in "${INVIDIOUS[@]}"; do
-              echo "INVIDIOUS $HOST"
-              rm -f /tmp/info.json output/downloaded.mp4
-              if curl -A "Mozilla/5.0" -fsSL --connect-timeout 4 --max-time 10 "$HOST/api/v1/videos/$VIDEO_ID?local=true" -o /tmp/info.json; then
-                TITLE="$(jq -r '.title // empty' /tmp/info.json 2>/dev/null)"
-                echo "Resolved title: $TITLE"
-                STREAM="$(jq -r '[.formatStreams[]? | select((.container // "") == "mp4")] | sort_by((.height // 0)) | last | .url // empty' /tmp/info.json 2>/dev/null)"
-                if [ -n "$STREAM" ]; then
-                  case "$STREAM" in
-                    http*) DL="$STREAM" ;;
-                    /*) DL="$HOST$STREAM" ;;
-                    *) DL="$HOST/$STREAM" ;;
-                  esac
-                  if curl -A "Mozilla/5.0" -fL --retry 1 --connect-timeout 5 --max-time 180 "$DL" -o output/downloaded.mp4 && ffprobe -v error output/downloaded.mp4 >/dev/null 2>&1; then
-                    OK=1
-                  fi
-                fi
-              fi
-              if [ "$OK" -eq 1 ]; then echo "SUCCESS via $HOST"; break; fi
-            done
-          fi
+          $candidate = Get-ChildItem output -File | Where-Object { $_.Extension -in ".mp4",".mkv",".webm" } | Select-Object -First 1
+          if (-not $candidate) { throw "No downloaded media file found" }
 
-          if [ "$OK" -eq 0 ]; then
-            echo "No public frontend could resolve/download this video"
-            exit 1
-          fi
+          if ($candidate.Name -ne "downloaded-video.mp4") {
+            & ffmpeg -y -i $candidate.FullName -c copy "output\downloaded-video.mp4"
+            if ($LASTEXITCODE -ne 0) {
+              & ffmpeg -y -i $candidate.FullName -c:v libx264 -c:a aac "output\downloaded-video.mp4"
+            }
+          }
 
-          ffprobe -v error -show_entries stream=codec_name,width,height -show_entries format=duration,size -of json output/downloaded.mp4
+          & ffprobe -v error -show_entries stream=codec_name,width,height -show_entries format=duration,size -of json "output\downloaded-video.mp4"
+          if ($LASTEXITCODE -ne 0) { throw "Downloaded MP4 failed ffprobe validation" }
 
-      - name: Upload MP4
+      - name: Upload MP4 artifact
         uses: actions/upload-artifact@v4
         with:
           name: downloaded-video
-          path: output/downloaded.mp4
+          path: output/downloaded-video.mp4
           if-no-files-found: error
           compression-level: 0
           retention-days: 1
