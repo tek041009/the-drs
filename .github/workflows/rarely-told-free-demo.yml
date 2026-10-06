@@ -1,0 +1,43 @@
+name: Rarely Told Free Demo
+on:
+  push:
+    branches: [rarely-told-free-demo]
+    paths:
+      - '.github/workflows/rarely-told-free-demo.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: rarely-told-free-demo
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - name: Install free/open tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install kokoro-onnx soundfile pillow numpy opencv-python-headless
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+      - name: Render the first 30 seconds
+        run: python rarely_told_demo.py
+      - name: Publish demo to this isolated branch
+        run: |
+          git config user.name "Rarely Told Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add Rarely_Told_First_30s_Free.mp4
+          git commit -m "Render Rarely Told free first-30s demo" || exit 0
+          git push origin HEAD:rarely-told-free-demo
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rarely-told-first-30s-free
+          path: Rarely_Told_First_30s_Free.mp4
+          retention-days: 7
