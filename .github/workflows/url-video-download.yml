@@ -19,8 +19,11 @@ jobs:
 
       - name: Install downloader
         run: |
-          python3 -m pip install --upgrade yt-dlp pytubefix
+          python3 -m venv .venv
+          source .venv/bin/activate
+          python -m pip install --upgrade pip yt-dlp pytubefix
           command -v ffmpeg || brew install ffmpeg
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Resolve request
         id: request
@@ -53,7 +56,7 @@ jobs:
           if [ "$OK" -eq 0 ]; then try_client "tv" "bv*+ba/b" && OK=1; fi
           if [ "$OK" -eq 0 ]; then try_client "web_safari" "b[ext=mp4]/b" && OK=1; fi
           if [ "$OK" -eq 0 ]; then
-            python3 video-download/download_fallback.py "$VIDEO_URL" && OK=1
+            python video-download/download_fallback.py "$VIDEO_URL" && OK=1
           fi
           if [ "$OK" -eq 0 ]; then exit 1; fi
 
