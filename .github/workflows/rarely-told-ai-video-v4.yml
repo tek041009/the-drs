@@ -1,25 +1,50 @@
-name: Rarely Told AI Video V4 Test
+name: Rarely Told AI Video V4
 on:
   push:
     branches: [rarely-told-ai-video-v4]
     paths:
       - '.github/workflows/rarely-told-ai-video-v4.yml'
       - 'patch_ltx_workflow.py'
+      - 'rarely_told_v4_audio.py'
   workflow_dispatch:
 
 jobs:
-  generate:
+  audio:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
         with:
           ref: rarely-told-ai-video-v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Generate free narrator and sound design
+        run: |
+          pip install kokoro-onnx soundfile numpy
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python rarely_told_v4_audio.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rarely-told-v4-audio
+          path: mix.wav
+          retention-days: 7
 
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shot: [1,2,3,4,5,6,7,8]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: rarely-told-ai-video-v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Install free local AI video stack
         run: |
           python -m pip install --upgrade pip
@@ -29,37 +54,68 @@ jobs:
           pip install -r runtime/custom_nodes/ComfyUI-GGUF/requirements.txt
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg
-
-      - name: Download only the free quantized models needed
+      - name: Download free quantized LTX models
         run: |
           mkdir -p runtime/models/diffusion_models runtime/models/text_encoders runtime/models/vae
           hf download city96/LTX-Video-0.9.6-distilled-gguf ltxv-2b-0.9.6-distilled-04-25-Q4_K_S.gguf --local-dir runtime/models/diffusion_models
           hf download city96/t5-v1_1-xxl-encoder-gguf t5-v1_1-xxl-encoder-Q3_K_S.gguf --local-dir runtime/models/text_encoders
           hf download city96/LTX-Video-0.9.6-distilled-gguf LTX-Video-0.9.6-VAE-BF16.safetensors --local-dir runtime/models/vae
-          df -h
-
-      - name: Get and patch the official distilled LTX workflow
+      - name: Build shot workflow
+        env:
+          SHOT: \${{ matrix.shot }}
         run: |
           curl -L --fail --retry 4 -o workflow.json https://huggingface.co/city96/LTX-Video-0.9.6-distilled-gguf/resolve/704526df0df01044eb40acd2d7d945e5e313cdb9/media/ltx-video-2b-v0.9.6-distilled_workflow.json
           python patch_ltx_workflow.py workflow.json
-
-      - name: Start local ComfyUI CPU server
+      - name: Start local ComfyUI
         run: |
           comfy --workspace ./runtime launch --background -- --cpu --listen 127.0.0.1 --port 8188
           sleep 12
           curl --fail http://127.0.0.1:8188/system_stats
-
-      - name: Generate genuine AI animated test shot
+      - name: Generate animated story shot
+        env:
+          SHOT: \${{ matrix.shot }}
         run: |
           comfy --workspace ./runtime --json run --workflow workflow.json --where local --host 127.0.0.1 --port 8188 --wait --timeout 3600 2>&1 | tee comfy_run.json
-          find runtime/output -type f -maxdepth 2 -printf '%p %s bytes\n' || true
           SRC=$(find runtime/output -type f \( -name '*.webm' -o -name '*.mp4' \) | head -n 1)
           test -n "$SRC"
-          ffmpeg -y -loglevel error -i "$SRC" -vf "scale=1280:720:flags=lanczos" -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -an Rarely_Told_V4_AI_Test_Shot.mp4
-          ffprobe -v error -show_entries format=duration,size -of default=nw=1 Rarely_Told_V4_AI_Test_Shot.mp4
-
+          ffmpeg -y -loglevel error -i "$SRC" \
+            -vf "scale=1280:712:flags=lanczos,pad=1280:720:0:4:black" \
+            -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -an "shot_\${SHOT}.mp4"
+          ffprobe -v error -show_entries format=duration,size -of default=nw=1 "shot_\${SHOT}.mp4"
       - uses: actions/upload-artifact@v4
         with:
-          name: rarely-told-v4-ai-test-shot
-          path: Rarely_Told_V4_AI_Test_Shot.mp4
+          name: rarely-told-v4-shot-\${{ matrix.shot }}
+          path: shot_\${{ matrix.shot }}.mp4
+          retention-days: 7
+
+  finish:
+    needs: [audio, generate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download generated shots
+        uses: actions/download-artifact@v4
+        with:
+          pattern: rarely-told-v4-shot-*
+          path: shots
+          merge-multiple: true
+      - name: Download audio
+        uses: actions/download-artifact@v4
+        with:
+          name: rarely-told-v4-audio
+          path: audio
+      - name: Assemble first 30 seconds
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          printf "file '%s/shot_1.mp4'\nfile '%s/shot_2.mp4'\nfile '%s/shot_3.mp4'\nfile '%s/shot_4.mp4'\nfile '%s/shot_5.mp4'\nfile '%s/shot_6.mp4'\nfile '%s/shot_7.mp4'\nfile '%s/shot_8.mp4'\n" "$PWD/shots" "$PWD/shots" "$PWD/shots" "$PWD/shots" "$PWD/shots" "$PWD/shots" "$PWD/shots" "$PWD/shots" > list.txt
+          ffmpeg -y -loglevel error -f concat -safe 0 -i list.txt -c copy visual.mp4
+          ffmpeg -y -loglevel error -i visual.mp4 -i audio/mix.wav -t 30 \
+            -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p \
+            -c:a aac -b:a 192k -movflags +faststart Rarely_Told_AI_First_30s_V4.mp4
+          ffprobe -v error -show_entries format=duration,size -of default=nw=1 Rarely_Told_AI_First_30s_V4.mp4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rarely-told-ai-first-30s-v4
+          path: Rarely_Told_AI_First_30s_V4.mp4
           retention-days: 7
