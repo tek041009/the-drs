@@ -1,0 +1,22 @@
+name: Rarely Told V5 MSR Probe
+on:
+  push:
+    branches: [rarely-told-v5-ltx25]
+    paths:
+      - '.github/workflows/rarely-told-v5-msr-probe.yml'
+      - 'probe_ltx25_msr.py'
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: rarely-told-v5-ltx25
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install gradio_client
+      - run: python probe_ltx25_msr.py
