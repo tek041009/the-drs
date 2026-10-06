@@ -1,0 +1,49 @@
+name: Rarely Told V3 Split Middle Recovery
+on:
+  push:
+    branches: [rarely-told-quality-v3]
+    paths:
+      - '.github/workflows/rarely-told-v3-split-middle.yml'
+  workflow_dispatch:
+
+jobs:
+  render-middle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk: [B1, B2]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: rarely-told-quality-v3
+      - uses: actions/checkout@v4
+        with:
+          repository: series-ai/jam-ready-assets
+          path: assets
+          lfs: true
+          fetch-depth: 1
+          sparse-checkout: |
+            kenney-animated-characters-protagonists/3D/characters
+            kenney-city-kit-commercial/3D/city/Models/GLB format
+            kenney-city-kit-roads/3D/city/Models/GLB format
+            kenney-furniture-kit/3D/interior-furniture/Models/GLTF format
+          sparse-checkout-cone-mode: false
+      - name: Install free renderer
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq blender xvfb libegl1 libgl1-mesa-dri libglx-mesa0 git-lfs python3-numpy
+          cd assets
+          git lfs pull || true
+      - name: Render middle scene half
+        env:
+          CHUNK: ${{ matrix.chunk }}
+        run: |
+          xvfb-run -a blender --background --python rarely_told_quality_blender.py
+          test -s "chunk_${CHUNK}.mp4"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rare-chunk-${{ matrix.chunk }}
+          path: chunk_${{ matrix.chunk }}.mp4
+          retention-days: 7
