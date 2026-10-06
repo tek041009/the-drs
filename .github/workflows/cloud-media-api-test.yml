@@ -13,48 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Test cobalt-compatible APIs
+      - name: Query Cobalt live instances
         shell: bash
         run: |
-          set -u
-          URL="https://www.youtube.com/watch?v=mRif6sq9gBI"
-          mkdir -p output
-
-          try_api () {
-            BASE="$1"
-            MODE="$2"
-            echo "Testing $BASE ($MODE)"
-            rm -f /tmp/r.json output/video.mp4
-
-            if [ "$MODE" = "old" ]; then
-              BODY="{\"url\":\"$URL\",\"vQuality\":\"1080\",\"vCodec\":\"h264\"}"
-              ENDPOINT="$BASE/api/json"
-            else
-              BODY="{\"url\":\"$URL\",\"videoQuality\":\"1080\",\"youtubeVideoCodec\":\"h264\",\"alwaysProxy\":true}"
-              ENDPOINT="$BASE/"
-            fi
-
-            CODE=$(curl -A "Mozilla/5.0" -sS -o /tmp/r.json -w "%{http_code}" -H "Accept: application/json" -H "Content-Type: application/json" --connect-timeout 10 --max-time 45 -d "$BODY" "$ENDPOINT" || true)
-            echo "HTTP $CODE"
-            cat /tmp/r.json || true
-            echo
-
-            DL=$(jq -r '.url // .download // empty' /tmp/r.json 2>/dev/null || true)
-            if [ -n "$DL" ]; then
-              echo "Downloading returned media URL"
-              if curl -A "Mozilla/5.0" -fL --connect-timeout 10 --max-time 180 "$DL" -o output/video.mp4; then
-                if [ -s output/video.mp4 ]; then
-                  file output/video.mp4
-                  return 0
-                fi
-              fi
-            fi
-            return 1
-          }
-
-          try_api "https://co.wuk.sh" "old" && exit 0
-          try_api "https://co.wuk.sh" "new" && exit 0
-          try_api "https://api.cobalt.tools" "new" && exit 0
-
-          echo "No cobalt endpoint succeeded"
-          exit 1
+          set -e
+          echo "Fetching instance directory"
+          curl -A "Mozilla/5.0" -fsSL --connect-timeout 10 --max-time 30 "https://instances.cobalt.best/api/instances.json" -o /tmp/instances.json
+          wc -c /tmp/instances.json
+          head -c 20000 /tmp/instances.json
