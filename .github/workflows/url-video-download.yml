@@ -20,7 +20,9 @@ jobs:
       - name: Install downloader
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --upgrade yt-dlp pytubefix
+          python -m pip install --upgrade "yt-dlp[default,curl-cffi]" pytubefix bgutil-ytdlp-pot-provider
+          docker run -d --name bgutil-pot -p 4416:4416 --init brainicism/bgutil-ytdlp-pot-provider
+          sleep 5
 
       - name: Resolve request
         id: request
@@ -42,7 +44,7 @@ jobs:
           mkdir -p output
           echo "Downloading: $VIDEO_URL"
 
-          if yt-dlp --no-playlist --merge-output-format mp4 --remux-video mp4 -f "bv*+ba/b" -o "output/downloaded.%(ext)s" "$VIDEO_URL"; then
+          if yt-dlp --no-playlist --js-runtimes node --extractor-args "youtube:player_client=mweb" --merge-output-format mp4 --remux-video mp4 -f "bv*+ba/b" -o "output/downloaded.%(ext)s" "$VIDEO_URL"; then
             echo "yt-dlp succeeded"
           else
             echo "yt-dlp failed; trying pytubefix"
