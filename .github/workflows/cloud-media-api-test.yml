@@ -11,34 +11,33 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - name: Test public Cobalt backend
+      - name: Resolve Bowen through loader.to
         shell: bash
         run: |
           set -euo pipefail
-          URL="https://www.youtube.com/watch?v=mRif6sq9gBI"
-          API="https://cobalt-api.kwiatekmiki.com"
-          mkdir -p output
+          mkdir -p app output
+          cd app
+          npm init -y >/dev/null 2>&1
+          npm install @ernestoyoofi/yt.loader-to >/dev/null 2>&1
 
-          BODY="{\"url\":\"$URL\",\"videoQuality\":\"1080\",\"youtubeVideoCodec\":\"h264\",\"alwaysProxy\":true}"
-          CODE=$(curl -A "gobalt/2.0.9" -sS -o /tmp/r.json -w "%{http_code}" -H "Accept: application/json" -H "Content-Type: application/json" --connect-timeout 10 --max-time 60 -d "$BODY" "$API/")
-          echo "HTTP $CODE"
-          cat /tmp/r.json
-          echo
+          node -e 'const pkg=require("@ernestoyoofi/yt.loader-to").default; (async()=>{const r=await pkg.DownloadMedia({link:"https://www.youtube.com/watch?v=mRif6sq9gBI",format:"1080"}); console.log(JSON.stringify(r)); if(!r||!r.url) process.exit(2); require("fs").writeFileSync("../download-url.txt",r.url);})().catch(e=>{console.error(e);process.exit(1)})'
 
-          DL=$(jq -r '.url // empty' /tmp/r.json)
-          test -n "$DL"
+          cd ..
+          DL="$(cat download-url.txt)"
+          echo "Resolved media URL host:"
+          python3 -c 'import sys,urllib.parse as u; print(u.urlparse(sys.argv[1]).netloc)' "$DL"
 
-          echo "Downloading returned media"
-          curl -A "Mozilla/5.0" -fL --connect-timeout 10 --max-time 240 "$DL" -o output/video.mp4
+          curl -A "Mozilla/5.0" -fL --retry 2 --connect-timeout 15 --max-time 300 "$DL" -o output/video.mp4
           test -s output/video.mp4
           file output/video.mp4
+          wc -c output/video.mp4
 
       - name: Upload video artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bowen-cobalt-test
+          name: bowen-loader-test
           path: output/video.mp4
           compression-level: 0
           retention-days: 1
