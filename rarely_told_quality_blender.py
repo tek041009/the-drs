@@ -2,7 +2,7 @@ import bpy, os, math, glob, random, subprocess
 from mathutils import Vector
 
 FPS=12
-W,H=720,405
+W,H=720,406
 END=FPS*30
 ROOT=os.getcwd()
 AS=os.path.join(ROOT,"assets")
