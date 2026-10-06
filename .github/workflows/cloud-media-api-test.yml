@@ -13,11 +13,32 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Query Cobalt live instances
+      - name: Test public Cobalt backend
         shell: bash
         run: |
-          set -e
-          echo "Fetching instance directory"
-          curl -k -A "Mozilla/5.0" -fsSL --connect-timeout 10 --max-time 30 "https://instances.cobalt.best/api/instances.json" -o /tmp/instances.json
-          wc -c /tmp/instances.json
-          head -c 20000 /tmp/instances.json
+          set -euo pipefail
+          URL="https://www.youtube.com/watch?v=mRif6sq9gBI"
+          API="https://cobalt-api.kwiatekmiki.com"
+          mkdir -p output
+
+          BODY="{\"url\":\"$URL\",\"videoQuality\":\"1080\",\"youtubeVideoCodec\":\"h264\",\"alwaysProxy\":true}"
+          CODE=$(curl -A "gobalt/2.0.9" -sS -o /tmp/r.json -w "%{http_code}" -H "Accept: application/json" -H "Content-Type: application/json" --connect-timeout 10 --max-time 60 -d "$BODY" "$API/")
+          echo "HTTP $CODE"
+          cat /tmp/r.json
+          echo
+
+          DL=$(jq -r '.url // empty' /tmp/r.json)
+          test -n "$DL"
+
+          echo "Downloading returned media"
+          curl -A "Mozilla/5.0" -fL --connect-timeout 10 --max-time 240 "$DL" -o output/video.mp4
+          test -s output/video.mp4
+          file output/video.mp4
+
+      - name: Upload video artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bowen-cobalt-test
+          path: output/video.mp4
+          compression-level: 0
+          retention-days: 1
