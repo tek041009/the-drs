@@ -27,7 +27,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          REQUEST_FILE="$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" | grep '^video-download/requests/.*\.txt$' | head -n 1)"
+          REQUEST_FILE="$(find video-download/requests -maxdepth 1 -type f -name '*.txt' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
           test -n "$REQUEST_FILE"
           URL="$(head -n 1 "$REQUEST_FILE" | tr -d '\r\n')"
           test -n "$URL"
