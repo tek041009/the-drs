@@ -1,1 +1,1 @@
-loader-to-bowen-test
+loader-direct-info
