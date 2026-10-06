@@ -62,7 +62,7 @@ jobs:
           hf download city96/LTX-Video-0.9.6-distilled-gguf LTX-Video-0.9.6-VAE-BF16.safetensors --local-dir runtime/models/vae
       - name: Build shot workflow
         env:
-          SHOT: \${{ matrix.shot }}
+          SHOT: ${{ matrix.shot }}
         run: |
           curl -L --fail --retry 4 -o workflow.json https://huggingface.co/city96/LTX-Video-0.9.6-distilled-gguf/resolve/704526df0df01044eb40acd2d7d945e5e313cdb9/media/ltx-video-2b-v0.9.6-distilled_workflow.json
           python patch_ltx_workflow.py workflow.json
@@ -73,19 +73,19 @@ jobs:
           curl --fail http://127.0.0.1:8188/system_stats
       - name: Generate animated story shot
         env:
-          SHOT: \${{ matrix.shot }}
+          SHOT: ${{ matrix.shot }}
         run: |
           comfy --workspace ./runtime --json run --workflow workflow.json --where local --host 127.0.0.1 --port 8188 --wait --timeout 3600 2>&1 | tee comfy_run.json
           SRC=$(find runtime/output -type f \( -name '*.webm' -o -name '*.mp4' \) | head -n 1)
           test -n "$SRC"
           ffmpeg -y -loglevel error -i "$SRC" \
             -vf "scale=1280:712:flags=lanczos,pad=1280:720:0:4:black" \
-            -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -an "shot_\${SHOT}.mp4"
-          ffprobe -v error -show_entries format=duration,size -of default=nw=1 "shot_\${SHOT}.mp4"
+            -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -an "shot_${SHOT}.mp4"
+          ffprobe -v error -show_entries format=duration,size -of default=nw=1 "shot_${SHOT}.mp4"
       - uses: actions/upload-artifact@v4
         with:
-          name: rarely-told-v4-shot-\${{ matrix.shot }}
-          path: shot_\${{ matrix.shot }}.mp4
+          name: rarely-told-v4-shot-${{ matrix.shot }}
+          path: shot_${{ matrix.shot }}.mp4
           retention-days: 7
 
   finish:
