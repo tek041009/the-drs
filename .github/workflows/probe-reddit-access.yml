@@ -1,0 +1,34 @@
+name: Probe Reddit Access
+on:
+  push:
+    paths:
+      - 'video-download/reddit-probe-trigger.txt'
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe Reddit endpoints
+        shell: bash
+        run: |
+          set +e
+          UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154 Safari/537.36'
+          urls=(
+            'https://www.reddit.com/r/BORUpdates/comments/1wxfjot/aita_for_telling_my_son_and_his_fiance_i_wont_pay/'
+            'https://old.reddit.com/r/BORUpdates/comments/1wxfjot/aita_for_telling_my_son_and_his_fiance_i_wont_pay/'
+            'https://embed.reddit.com/r/BORUpdates/comments/1wxfjot/aita_for_telling_my_son_and_his_fiance_i_wont_pay/'
+            'https://www.reddit.com/r/BORUpdates/comments/1wxfjot/aita_for_telling_my_son_and_his_fiance_i_wont_pay/.json?raw_json=1'
+            'https://www.reddit.com/comments/1wxfjot/.json?raw_json=1'
+          )
+          i=0
+          for u in "${urls[@]}"; do
+            i=$((i+1))
+            echo "=== PROBE $i ==="
+            echo "$u"
+            code=$(curl -L -A "$UA" -sS -o "/tmp/reddit_$i.out" -w '%{http_code}' --connect-timeout 10 --max-time 30 "$u")
+            echo "HTTP=$code BYTES=$(wc -c < /tmp/reddit_$i.out)"
+            head -c 500 "/tmp/reddit_$i.out" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g'
+            echo
+          done
