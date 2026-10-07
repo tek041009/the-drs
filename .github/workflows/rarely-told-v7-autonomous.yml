@@ -1,0 +1,94 @@
+name: Rarely Told V7 Autonomous Quality Render
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/rarely-told-v7-autonomous.yml'
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rarely-told-v7-autonomous
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out current Rarely Told build branch
+        uses: actions/checkout@v4
+        with:
+          ref: rarely-told-v5-ltx25
+          fetch-depth: 1
+
+      - name: Stop permanently after a successful V7 exists
+        id: gate
+        run: |
+          git fetch origin main --depth=1
+          if git cat-file -e origin/main:.github/rarely_told_v7_done.txt 2>/dev/null; then
+            echo "done=true" >> "$GITHUB_OUTPUT"
+            echo "V7 already completed; no generation requested."
+          else
+            echo "done=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install free render/orchestration stack
+        if: steps.gate.outputs.done != 'true'
+        run: |
+          pip install gradio_client kokoro-onnx soundfile
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+
+      - name: Generate two LTX-2.5 native multishot segments and assemble 30 seconds
+        if: steps.gate.outputs.done != 'true'
+        id: render
+        run: |
+          set +e
+          python build_rarely_told_v5.py
+          RC=$?
+          set -e
+          if [ "$RC" -eq 75 ]; then
+            echo "success=false" >> "$GITHUB_OUTPUT"
+            echo "capacity_blocked=true" >> "$GITHUB_OUTPUT"
+            echo "Free GPU quota/capacity is currently unavailable. Ending this attempt cleanly; the next scheduled run will retry."
+            exit 0
+          fi
+          if [ "$RC" -ne 0 ]; then
+            exit "$RC"
+          fi
+          test -s Rarely_Told_AI_First_30s_V7.mp4
+          test -s Rarely_Told_V7_Contact.jpg
+          echo "success=true" >> "$GITHUB_OUTPUT"
+          echo "capacity_blocked=false" >> "$GITHUB_OUTPUT"
+
+      - name: Upload completed V7 quality candidate
+        if: steps.render.outputs.success == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rarely-told-ai-first-30s-v7
+          path: |
+            Rarely_Told_AI_First_30s_V7.mp4
+            Rarely_Told_V7_Contact.jpg
+            segment_a.mp4
+            segment_b.mp4
+            bridge_frame.jpg
+          retention-days: 90
+
+      - name: Mark V7 complete so future scheduled runs become no-ops
+        if: steps.render.outputs.success == 'true'
+        run: |
+          git config user.name "Rarely Told Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git fetch origin main --depth=1
+          git switch --detach origin/main
+          mkdir -p .github
+          printf 'completed_run=%s\ncompleted_utc=%s\n' "$GITHUB_RUN_ID" "$(date -u +%FT%TZ)" > .github/rarely_told_v7_done.txt
+          git add .github/rarely_told_v7_done.txt
+          git commit -m "Mark Rarely Told V7 quality render complete"
+          git push origin HEAD:main
