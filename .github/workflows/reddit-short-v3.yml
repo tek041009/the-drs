@@ -25,13 +25,16 @@ jobs:
           playwright install --with-deps chromium
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
-      - name: Get MIT-licensed endless runner
+      - name: Get MIT-licensed modern parkour runner
         run: |
-          git clone --depth 1 https://github.com/juwalbose/ThreeJSEndlessRunner3D.git runner_game
-          # Disable collision explosions for smooth continuous background footage.
-          sed -i 's/if(treePos.distanceTo(heroSphere.position)<=0.6)/if(false \&\& treePos.distanceTo(heroSphere.position)<=0.6)/' runner_game/src/endlessroller.js
-          (cd runner_game && python -m http.server 8000 >/tmp/runner_http.log 2>&1 &)
-          sleep 2
+          git clone --depth 1 https://github.com/kamalesh404/void-runner.git runner_game
+          cd runner_game
+          # Keep the footage flowing even if an obstacle is clipped.
+          sed -i 's/gameOver();/state.combo = 1;/' main.js
+          npm ci
+          npm run dev -- --host 127.0.0.1 --port 8000 >/tmp/runner_http.log 2>&1 &
+          cd ..
+          sleep 4
       - name: Record clean no-hands gameplay
         run: python capture_clean_runner.py
       - name: Build de-muffled story short
