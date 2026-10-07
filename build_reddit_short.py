@@ -180,16 +180,25 @@ def frame_at(sec):
     d.text((W-80,28),f"{12+int(sec)%31}",font=f_score,fill=(255,255,255,235))
     return img.convert("RGB")
 
-# pipe frames directly to ffmpeg
-frames=int(math.ceil(DUR*FPS))
-cmd=["ffmpeg","-y","-loglevel","error","-f","rawvideo","-pix_fmt","rgb24","-s",f"{W}x{H}","-r",str(FPS),"-i","-",
-     "-c:v","libx264","-preset","veryfast","-crf","17","-pix_fmt","yuv420p","gameplay.mp4"]
-p=subprocess.Popen(cmd,stdin=subprocess.PIPE)
-for i in range(frames):
-    fr=frame_at(i/FPS)
-    p.stdin.write(fr.tobytes())
-p.stdin.close()
-if p.wait()!=0: raise RuntimeError("gameplay encode failed")
+# Prefer real royalty-free stock gameplay when acquired by the workflow.
+# The procedural endless-runner remains only as a fail-safe so production never stalls.
+if os.path.exists("stock.mp4") and os.path.getsize("stock.mp4") > 100000:
+    subprocess.run([
+        "ffmpeg","-y","-loglevel","error","-stream_loop","-1","-i","stock.mp4",
+        "-t",f"{DUR:.3f}",
+        "-vf","crop='min(iw,ih*9/16)':ih:(iw-min(iw,ih*9/16))/2:0,scale=540:960:flags=lanczos,fps=30",
+        "-an","-c:v","libx264","-preset","veryfast","-crf","17","-pix_fmt","yuv420p","gameplay.mp4"
+    ],check=True)
+else:
+    frames=int(math.ceil(DUR*FPS))
+    cmd=["ffmpeg","-y","-loglevel","error","-f","rawvideo","-pix_fmt","rgb24","-s",f"{W}x{H}","-r",str(FPS),"-i","-",
+         "-c:v","libx264","-preset","veryfast","-crf","17","-pix_fmt","yuv420p","gameplay.mp4"]
+    p=subprocess.Popen(cmd,stdin=subprocess.PIPE)
+    for i in range(frames):
+        fr=frame_at(i/FPS)
+        p.stdin.write(fr.tobytes())
+    p.stdin.close()
+    if p.wait()!=0: raise RuntimeError("gameplay encode failed")
 
 # ---------- captions ----------
 segments=[
@@ -217,7 +226,7 @@ segments=[
 ]
 weights=[max(2,len(s.replace(" ",""))/9.4) for s,_ in segments]
 total=sum(weights)
-start=0.15
+start=0.02
 usable=max(1.0,duration-0.25)
 times=[]
 cur=start
@@ -252,7 +261,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     # persistent top tag
     f.write(f"Dialogue: 2,{ass_time(0)},{ass_time(DUR)},Tag,,0,0,0,,{{\\pos(540,112)}}REDDIT STORY • r/AITAH\\N{{\\fs26\\c&HBBBBBB&}}retold in our own words\n")
     for st,en,seg,hot in times:
-        style="CTA" if seg=="WOULD YOU STILL GO?" else "Main"
+        style="CTA" if seg in ("MY SISTER SAID MY FACE","WOULD RUIN HER WEDDING PHOTOS.","WOULD YOU STILL GO?") else "Main"
         if hot:
             # last key phrase in warm yellow
             words=seg.split()
