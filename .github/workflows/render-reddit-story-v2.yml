@@ -42,7 +42,7 @@ jobs:
 
       - name: Capture the real Reddit post
         run: |
-          cat > /tmp/reddit-shot.js <<'NODE'
+          cat > reddit-shot.js <<'NODE'
           const { chromium } = require('playwright');
           (async () => {
             const browser = await chromium.launch({headless:true});
@@ -73,7 +73,7 @@ jobs:
             await browser.close();
           })();
           NODE
-          node /tmp/reddit-shot.js
+          node reddit-shot.js
           test -s reddit_post_raw.png
 
       - name: Get locked approved narration
