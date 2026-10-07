@@ -24,6 +24,10 @@ jobs:
           pip install kokoro-onnx soundfile numpy pillow
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+      - name: Acquire royalty-free stock gameplay
+        run: |
+          curl -L --fail --retry 4 --retry-delay 2 -A "Mozilla/5.0" "https://www.pexels.com/download/video/4291850/" -o stock.mp4 || true
+          if [ -f stock.mp4 ]; then ffprobe -v error -show_entries format=duration,size -of default=nw=1 stock.mp4 || rm -f stock.mp4; fi
       - name: Build final short
         run: python build_reddit_short.py
       - uses: actions/upload-artifact@v4
