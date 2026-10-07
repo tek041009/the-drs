@@ -3,10 +3,10 @@ import os, shutil
 
 client=Client("ChopperBlu/ltx-2-5-demo")
 prompt=(
-"High-end 2026 cinematic stylized 3D animated feature-film shot set in Paris, 1925. "
-"Victor Lustig is a handsome European man in his late thirties with a slim build, narrow oval face, neat dark pencil moustache, dark brown hair beneath a charcoal fedora, tailored charcoal 1920s three-piece suit, cream shirt, muted gold tie and polished black shoes. "
-"He walks confidently toward camera down a lively Paris boulevard. Authentic 1920s cars move naturally behind him, pedestrians cross around him, warm shop windows glow, and the Eiffel Tower sits softly in the hazy distance. "
-"The camera tracks backward smoothly at chest height as he walks. His face remains stable and detailed, coat and tie move naturally, feet contact the pavement correctly, hands remain anatomically coherent. "
+"High-end 2026 cinematic stylized 3D animated feature-film shot set inside an elegant Paris cafe in 1925. "
+"Victor Lustig is the exact same recurring character: a handsome European man in his late thirties with a slim build, narrow oval face, neat dark pencil moustache, dark brown hair beneath a charcoal fedora, tailored charcoal 1920s three-piece suit, cream shirt, muted gold tie and polished black shoes. "
+"He sits alone at a small table beside a rain-streaked window. A waiter places a folded French newspaper on the table; Victor reaches for it and begins to unfold it with realistic paper motion. Espresso steam curls beside him. "
+"The camera performs a slow intimate dolly-in from medium shot toward Victor. His face remains stable and detailed, hands stay anatomically coherent, contact with the newspaper is physically believable, background patrons move naturally. "
 "Premium theatrical 3D animation, rich materials, realistic proportions, nuanced expression, soft global illumination, atmospheric depth, cinematic depth of field, crisp coherent geometry, physically believable motion, no text, no watermark."
 )
 result=client.predict(
