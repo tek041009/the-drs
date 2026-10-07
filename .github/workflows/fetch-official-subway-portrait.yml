@@ -1,0 +1,38 @@
+name: Fetch Official 4K Subway Portrait
+on:
+  push:
+    paths:
+      - 'video-download/subway-official-trigger.txt'
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install downloader
+        run: |
+          python -m pip install --quiet -U yt-dlp
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+
+      - name: Download official portrait gameplay
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='https://www.youtube.com/watch?v=QPW3XwBoQlw'
+          # Prefer a true portrait stream with at least 1080x1920 and 60fps where available.
+          yt-dlp             --no-playlist             -f "bv*[width>=1080][height>=1920][fps>=50]+ba/bv*[width>=1080][height>=1920]+ba/b[height>=1920]"             --merge-output-format mp4             -o source.%(ext)s             "$URL"
+          SRC="$(ls source.* | head -1)"
+          ffprobe -v error -show_entries stream=codec_name,width,height,r_frame_rate -show_entries format=duration,size -of json "$SRC"
+
+          # Extract only the part needed for the Reddit short, keeping 60fps and high bitrate-quality.
+          ffmpeg -y -ss 18 -i "$SRC" -t 34 -an             -vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=60"             -c:v libx264 -preset slow -crf 16 -pix_fmt yuv420p -movflags +faststart             subway_official_1080x1920_60fps.mp4
+          ffprobe -v error -show_entries stream=codec_name,width,height,r_frame_rate -show_entries format=duration,size -of json subway_official_1080x1920_60fps.mp4
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: subway-official-portrait-hq
+          path: subway_official_1080x1920_60fps.mp4
+          compression-level: 0
+          retention-days: 1
