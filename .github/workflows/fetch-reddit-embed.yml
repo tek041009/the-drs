@@ -1,0 +1,24 @@
+name: Fetch Official Reddit Embed
+on:
+  push:
+    paths:
+      - 'video-download/reddit-embed-fetch-trigger.txt'
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch official Reddit embed HTML
+        run: |
+          UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154 Safari/537.36'
+          URL='https://embed.reddit.com/r/BORUpdates/comments/1wxfjot/aita_for_telling_my_son_and_his_fiance_i_wont_pay/'
+          curl -fL -A "$UA" --retry 3 "$URL" -o reddit_embed.html
+          test -s reddit_embed.html
+          grep -Fqi 'theme-embed' reddit_embed.html
+          ! grep -Fqi 'blocked by network security' reddit_embed.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: official-reddit-embed-html
+          path: reddit_embed.html
+          retention-days: 1
