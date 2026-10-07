@@ -99,7 +99,6 @@ Style: Small,DejaVu Sans,29,&H00D6D6D6,&H00000000,&H00000000,&H00000000,-1,0,0,0
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """)
-    f.write(f"Dialogue: 4,{ast(0)},{ast(DUR)},Small,,0,0,0,,r/AITAH • retold\n")
     for idx,(st,en,seg,hot) in enumerate(timed):
         style="Hook" if idx<2 or seg=="WOULD YOU STILL GO?" else "Main"
         if hot:
