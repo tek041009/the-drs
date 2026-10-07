@@ -1,10 +1,5 @@
 name: Rarely Told V5 Current-Gen Opening
 on:
-  push:
-    branches: [rarely-told-v5-ltx25]
-    paths:
-      - '.github/workflows/rarely-told-v5-full.yml'
-      - 'build_rarely_told_v5.py'
   workflow_dispatch:
 
 jobs:
