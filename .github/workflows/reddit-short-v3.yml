@@ -1,0 +1,45 @@
+name: Reddit Story Short V3 Clean Gameplay
+on:
+  push:
+    branches: [reddit-shorts-pilot]
+    paths:
+      - '.github/workflows/reddit-short-v3.yml'
+      - 'capture_clean_runner.py'
+      - 'build_reddit_short_v3.py'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: reddit-shorts-pilot
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install renderer
+        run: |
+          pip install playwright kokoro-onnx soundfile numpy
+          playwright install --with-deps chromium
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+      - name: Get MIT-licensed endless runner
+        run: |
+          git clone --depth 1 https://github.com/juwalbose/ThreeJSEndlessRunner3D.git runner_game
+          # Disable collision explosions for smooth continuous background footage.
+          sed -i 's/if(treePos.distanceTo(heroSphere.position)<=0.6)/if(false \&\& treePos.distanceTo(heroSphere.position)<=0.6)/' runner_game/src/endlessroller.js
+          (cd runner_game && python -m http.server 8000 >/tmp/runner_http.log 2>&1 &)
+          sleep 2
+      - name: Record clean no-hands gameplay
+        run: python capture_clean_runner.py
+      - name: Build de-muffled story short
+        run: python build_reddit_short_v3.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reddit-story-short-clean-v3
+          path: |
+            Reddit_Story_Short_Clean_Gameplay.mp4
+            qa_sheet_v3.jpg
+          retention-days: 7
