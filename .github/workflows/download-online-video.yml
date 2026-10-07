@@ -1,0 +1,91 @@
+name: Download Online Video
+
+on:
+  push:
+    paths:
+      - 'video-download/request.txt'
+
+permissions:
+  contents: write
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+
+      - name: Download requested YouTube video
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="$(head -n 1 video-download/request.txt | tr -d '\r\n')"
+          test -n "$URL"
+          mkdir -p video-download/output
+
+          QUERY=$(python3 - "$URL" <<'PY'
+import sys, urllib.parse
+print(urllib.parse.urlencode({"url": sys.argv[1], "add_info": "1", "format": "1080"}))
+PY
+)
+
+          GOT=0
+          for IP in 172.67.198.191 104.21.95.172; do
+            CODE=$(curl --resolve "loader.to:443:$IP" -A "Mozilla/5.0" -sS -o /tmp/info.json -w "%{http_code}" --connect-timeout 10 --max-time 45 "https://loader.to/api/download?$QUERY" || true)
+            if [ "$CODE" = "200" ]; then GOT=1; break; fi
+          done
+          test "$GOT" -eq 1
+
+          ID=$(jq -r '.id // empty' /tmp/info.json)
+          PROGRESS=$(jq -r '.progress_url // empty' /tmp/info.json)
+          test -n "$ID"
+          if [ -z "$PROGRESS" ]; then PROGRESS="https://p.savenow.to/api/progress?id=$ID"; fi
+
+          DL=""
+          for N in $(seq 1 150); do
+            curl -A "Mozilla/5.0" -sS --connect-timeout 10 --max-time 30 "$PROGRESS" -o /tmp/progress.json || true
+            SUCCESS=$(jq -r '.success // 0' /tmp/progress.json 2>/dev/null || echo 0)
+            DL=$(jq -r '.download_url // .download // empty' /tmp/progress.json 2>/dev/null || true)
+            if [ "$SUCCESS" = "1" ] && [ -n "$DL" ]; then break; fi
+            sleep 2
+          done
+          test -n "$DL"
+
+          curl -A "Mozilla/5.0" -fL --retry 2 --connect-timeout 15 --max-time 600 "$DL" -o /tmp/source.mp4
+          test -s /tmp/source.mp4
+
+      - name: Prepare reusable vertical background clip
+        shell: bash
+        run: |
+          set -euo pipefail
+          ffmpeg -y -ss 3 -i /tmp/source.mp4 -t 34 -an \
+            -vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30" \
+            -c:v libx264 -preset medium -crf 20 -movflags +faststart \
+            video-download/output/SUBWAY_SURFERS_VERTICAL_REDDIT_BG.mp4
+          ffprobe -v error -show_entries stream=codec_name,width,height,r_frame_rate -show_entries format=duration,size -of json video-download/output/SUBWAY_SURFERS_VERTICAL_REDDIT_BG.mp4
+          test "$(stat -c%s video-download/output/SUBWAY_SURFERS_VERTICAL_REDDIT_BG.mp4)" -lt 99000000
+
+      - name: Commit downloaded clip
+        shell: bash
+        run: |
+          git config user.name "ChatGPT Video Workflow"
+          git config user.email "actions@users.noreply.github.com"
+          git add video-download/output/SUBWAY_SURFERS_VERTICAL_REDDIT_BG.mp4
+          git commit -m "Add Subway Surfers Reddit background clip" || exit 0
+          git push
+
+      - name: Keep short-lived artifact backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: subway-surfers-reddit-bg
+          path: video-download/output/SUBWAY_SURFERS_VERTICAL_REDDIT_BG.mp4
+          compression-level: 0
+          retention-days: 1
