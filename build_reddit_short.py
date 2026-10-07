@@ -186,7 +186,7 @@ if os.path.exists("stock.mp4") and os.path.getsize("stock.mp4") > 100000:
     subprocess.run([
         "ffmpeg","-y","-loglevel","error","-stream_loop","-1","-i","stock.mp4",
         "-t",f"{DUR:.3f}",
-        "-vf","crop='min(iw,ih*9/16)':ih:(iw-min(iw,ih*9/16))/2:0,scale=540:960:flags=lanczos,fps=30",
+        "-vf","crop=608:1080:(iw-608)/2:0,scale=540:960:flags=lanczos,fps=30",
         "-an","-c:v","libx264","-preset","veryfast","-crf","17","-pix_fmt","yuv420p","gameplay.mp4"
     ],check=True)
 else:
