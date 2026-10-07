@@ -17,8 +17,14 @@ jobs:
           test -s reddit_embed.html
           grep -Fqi 'theme-embed' reddit_embed.html
           ! grep -Fqi 'blocked by network security' reddit_embed.html
+          CSS_URL="$(grep -o 'https://www.redditstatic.com/shreddit/styles-css-inlined-css-[^"]*\.css' reddit_embed.html | head -1)"
+          test -n "$CSS_URL"
+          curl -fL -A "$UA" --retry 3 "$CSS_URL" -o reddit_official.css
+          test -s reddit_official.css
       - uses: actions/upload-artifact@v4
         with:
           name: official-reddit-embed-html
-          path: reddit_embed.html
+          path: |
+            reddit_embed.html
+            reddit_official.css
           retention-days: 1
