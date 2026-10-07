@@ -5,21 +5,33 @@ on:
       - 'video-download/reddit-v2-trigger.txt'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   render:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install render stack
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install render and screenshot stack
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg unzip fonts-dejavu-core
           python -m pip install --quiet pillow
-      - name: Get real Subway Surfers gameplay
+          npm install --no-save playwright
+          npx playwright install chromium
+
+      - name: Get Subway Surfers gameplay
         run: |
           curl -fL --retry 3 'https://github.com/evanreilly/subwaysurfers/archive/refs/tags/v1.3.3.7.zip' -o /tmp/subway.zip
           unzip -q /tmp/subway.zip -d /tmp/subway
@@ -27,18 +39,71 @@ jobs:
           test -n "$GAME"
           cp "$GAME" gameplay.mp4
           ffprobe -v error -show_entries stream=width,height,r_frame_rate -show_entries format=duration,size -of json gameplay.mp4
+
+      - name: Capture the real Reddit post
+        run: |
+          cat > /tmp/reddit-shot.js <<'NODE'
+          const { chromium } = require('playwright');
+          (async () => {
+            const browser = await chromium.launch({headless:true});
+            const page = await browser.newPage({viewport:{width:1100,height:1500}, deviceScaleFactor:1});
+            const url = 'https://www.reddit.com/r/BORUpdates/comments/1wxfjot/aita_for_telling_my_son_and_his_fiance_i_wont_pay/';
+            await page.goto(url,{waitUntil:'domcontentloaded',timeout:60000});
+            await page.waitForTimeout(5000);
+            await page.addStyleTag({content:`
+              shreddit-app > faceplate-tracker[noun="login"],
+              #credential_picker_container,
+              shreddit-async-loader[bundlename="desktop_rpl_nsfw_blocking_modal"],
+              .promotedlink { display:none !important; }
+            `}).catch(()=>{});
+            const selectors = ['shreddit-post','article','[data-testid="post-container"]','main'];
+            let saved=false;
+            for (const sel of selectors) {
+              const loc=page.locator(sel).first();
+              if (await loc.count()) {
+                try {
+                  await loc.screenshot({path:'reddit_post_raw.png'});
+                  saved=true; break;
+                } catch {}
+              }
+            }
+            if (!saved) {
+              await page.screenshot({path:'reddit_post_raw.png',clip:{x:0,y:0,width:1100,height:750}});
+            }
+            await browser.close();
+          })();
+          NODE
+          node /tmp/reddit-shot.js
+          test -s reddit_post_raw.png
+
       - name: Get locked approved narration
         run: |
           curl -fL --retry 3 'https://d2ol7oe51mr4n9.cloudfront.net/user_3JzZORlH5hOIMtVqoR4LoNCKTLC/c623b2e7-2d74-4c36-bda3-8b72adea6172.mp3' -o approved_voice.mp3
           ffprobe -v error -show_entries format=duration,size -of json approved_voice.mp3
-      - name: Render postable short
+
+      - name: Render QA short
         run: python video-download/render_reddit_story_v2.py
-      - name: Upload final and QA
+
+      - name: Save QA outputs in repo
+        run: |
+          mkdir -p video-download/qa
+          cp Reddit_Story_V2_QA.mp4 video-download/qa/Reddit_Story_V2_QA.mp4
+          cp qa_sheet.jpg video-download/qa/qa_sheet.jpg
+          cp reddit_post.png video-download/qa/reddit_post.png
+          git config user.name "ChatGPT Video Workflow"
+          git config user.email "actions@users.noreply.github.com"
+          git add video-download/qa/
+          git commit -m "Add Reddit Story V2 QA video with real Reddit screenshot" || exit 0
+          git push
+
+      - name: Upload full-quality render
         uses: actions/upload-artifact@v4
         with:
           name: reddit-story-v2-postable
           path: |
             Reddit_Story_V2_POSTABLE.mp4
+            Reddit_Story_V2_QA.mp4
             qa_sheet.jpg
+            reddit_post.png
           compression-level: 0
           retention-days: 2
