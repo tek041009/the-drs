@@ -1,0 +1,32 @@
+name: Fetch Official Subway Video Only
+on:
+  push:
+    paths:
+      - 'video-download/subway-videoonly-trigger.txt'
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install yt-dlp
+        run: python -m pip install --quiet -U yt-dlp
+      - name: Download official high-res portrait video stream
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='https://www.youtube.com/watch?v=QPW3XwBoQlw'
+          yt-dlp --no-playlist             -f "bv*[width>=1080][height>=1920]/bv*[height>=1920]/bv*"             --format-sort "res:2160,fps:60,vcodec:h264"             -o 'official_subway.%(ext)s'             "$URL"
+          ls -lh official_subway.*
+          python - <<'PY'
+          import glob, os
+          p=glob.glob('official_subway.*')[0]
+          print(p, os.path.getsize(p))
+          assert os.path.getsize(p) > 5_000_000
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: official-subway-videoonly-hq
+          path: official_subway.*
+          compression-level: 0
+          retention-days: 1
