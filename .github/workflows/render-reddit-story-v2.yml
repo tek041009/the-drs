@@ -39,7 +39,7 @@ jobs:
         run: |
           BROWSER="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser || true)"
           test -n "$BROWSER"
-          URL='https://www.reddit.com/r/BORUpdates/comments/1wxfjot/aita_for_telling_my_son_and_his_fiance_i_wont_pay/'
+          URL='https://embed.reddit.com/r/BORUpdates/comments/1wxfjot/aita_for_telling_my_son_and_his_fiance_i_wont_pay/'
           "$BROWSER"             --headless=new             --no-sandbox             --disable-gpu             --hide-scrollbars             --window-size=1100,1500             --virtual-time-budget=8000             --screenshot=reddit_post_raw.png             "$URL"
           test -s reddit_post_raw.png
           python - <<'PY'
