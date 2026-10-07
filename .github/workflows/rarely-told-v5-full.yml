@@ -1,5 +1,9 @@
 name: Rarely Told V5 Current-Gen Opening
 on:
+  push:
+    branches: [rarely-told-v5-ltx25]
+    paths:
+      - 'v7_trigger.txt'
   workflow_dispatch:
 
 jobs:
