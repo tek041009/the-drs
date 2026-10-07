@@ -21,8 +21,8 @@ jobs:
       - name: Download public-domain Paris footage and stills
         run: |
           mkdir -p sources
-          curl -L --fail --retry 3 -o sources/seeing_paris_1.mp4 "https://ia700400.us.archive.org/23/items/6113_Seeing_Paris_Part_One_On_the_Boulevards_00_00_59_05/6113_Seeing_Paris_Part_One_On_the_Boulevards_00_00_59_05.mp4"
-          curl -L --fail --retry 3 -o sources/seeing_paris_4.mp4 "https://ia802606.us.archive.org/23/items/6113_Seeing_Paris_Part_Four_Up_and_Around_The_Eiffel_Tower_00_13_06_01/6113_Seeing_Paris_Part_Four_Up_and_Around_The_Eiffel_Tower_00_13_06_01.mp4"
+          curl -L --fail --retry 3 -o sources/seeing_paris_1.mp4 "https://commons.wikimedia.org/wiki/Special:Redirect/file/Seeing%20Paris%20Part%20One.webm"
+          curl -L --fail --retry 3 -o sources/seeing_paris_4.mp4 "https://commons.wikimedia.org/wiki/Special:Redirect/file/Seeing%20Paris%20Part%20Four.webm"
           curl -L --fail --retry 3 -o sources/victor_mugshot.jpg "https://commons.wikimedia.org/wiki/Special:Redirect/file/Victor%20Lustig%20Mugshot.jpeg"
           curl -L --fail --retry 3 -o sources/victor_id.jpg "https://commons.wikimedia.org/wiki/Special:Redirect/file/Victor%20Lustig%20DOJ%20BOI%20(FBI)%20identification,%201931.jpg"
           curl -L --fail --retry 3 -o sources/paris_traffic.jpg "https://commons.wikimedia.org/wiki/Special:Redirect/file/Place%20de%20l%27Op%C3%A9ra,%201920s%20Paris%20traffic.jpg"
