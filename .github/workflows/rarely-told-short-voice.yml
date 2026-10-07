@@ -1,0 +1,29 @@
+name: Rarely Told Eiffel Voice
+on:
+  push:
+    branches: [rarely-told-short-pd-v1]
+    paths:
+      - '.github/workflows/rarely-told-short-voice.yml'
+      - 'rarely_told_short_voice.py'
+  workflow_dispatch:
+
+jobs:
+  voice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: rarely-told-short-pd-v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install kokoro-onnx soundfile numpy
+      - run: python rarely_told_short_voice.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rarely-told-eiffel-voice
+          path: |
+            Rarely_Told_Eiffel_Voice.wav
+            voice_timing.json
+          retention-days: 7
