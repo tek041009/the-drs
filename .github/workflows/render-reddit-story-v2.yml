@@ -11,7 +11,7 @@ permissions:
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -19,17 +19,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
 
-      - name: Install render and screenshot stack
+      - name: Install render stack
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg unzip fonts-dejavu-core
           python -m pip install --quiet pillow
-          npm install --no-save playwright
-          npx playwright install chromium
 
       - name: Get Subway Surfers gameplay
         run: |
@@ -42,39 +37,16 @@ jobs:
 
       - name: Capture the real Reddit post
         run: |
-          cat > reddit-shot.js <<'NODE'
-          const { chromium } = require('playwright');
-          (async () => {
-            const browser = await chromium.launch({headless:true});
-            const page = await browser.newPage({viewport:{width:1100,height:1500}, deviceScaleFactor:1});
-            const url = 'https://www.reddit.com/r/BORUpdates/comments/1wxfjot/aita_for_telling_my_son_and_his_fiance_i_wont_pay/';
-            await page.goto(url,{waitUntil:'domcontentloaded',timeout:60000});
-            await page.waitForTimeout(5000);
-            await page.addStyleTag({content:`
-              shreddit-app > faceplate-tracker[noun="login"],
-              #credential_picker_container,
-              shreddit-async-loader[bundlename="desktop_rpl_nsfw_blocking_modal"],
-              .promotedlink { display:none !important; }
-            `}).catch(()=>{});
-            const selectors = ['shreddit-post','article','[data-testid="post-container"]','main'];
-            let saved=false;
-            for (const sel of selectors) {
-              const loc=page.locator(sel).first();
-              if (await loc.count()) {
-                try {
-                  await loc.screenshot({path:'reddit_post_raw.png'});
-                  saved=true; break;
-                } catch {}
-              }
-            }
-            if (!saved) {
-              await page.screenshot({path:'reddit_post_raw.png',clip:{x:0,y:0,width:1100,height:750}});
-            }
-            await browser.close();
-          })();
-          NODE
-          node reddit-shot.js
+          BROWSER="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser || true)"
+          test -n "$BROWSER"
+          URL='https://www.reddit.com/r/BORUpdates/comments/1wxfjot/aita_for_telling_my_son_and_his_fiance_i_wont_pay/'
+          "$BROWSER"             --headless=new             --no-sandbox             --disable-gpu             --hide-scrollbars             --window-size=1100,1500             --virtual-time-budget=8000             --screenshot=reddit_post_raw.png             "$URL"
           test -s reddit_post_raw.png
+          python - <<'PY'
+          from PIL import Image
+          im=Image.open('reddit_post_raw.png')
+          print({'width':im.width,'height':im.height})
+          PY
 
       - name: Get locked approved narration
         run: |
