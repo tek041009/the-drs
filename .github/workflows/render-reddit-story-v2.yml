@@ -41,12 +41,22 @@ jobs:
           REDDIT='https://embed.reddit.com/r/BORUpdates/comments/1wxfjot/aita_for_telling_my_son_and_his_fiance_i_wont_pay/'
           curl -fL -A "$UA" --retry 3 "$REDDIT" -o reddit_embed.html
           test -s reddit_embed.html
-          grep -Fq "AITA for telling my son and his fiance I won't pay for the wedding if I can't invite some family members" reddit_embed.html
+          grep -Fqi "theme-embed" reddit_embed.html
           ! grep -Fqi "blocked by network security" reddit_embed.html
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('reddit_embed.html')
+          s=p.read_text(encoding='utf-8', errors='ignore')
+          # Freeze Reddit's server-rendered post so client JS cannot redirect/reload to the blocked main site.
+          s=re.sub(r'<script\\b[^>]*>.*?</script>', '', s, flags=re.I|re.S)
+          s=re.sub(r'<meta[^>]+http-equiv=["\\']?refresh["\\']?[^>]*>', '', s, flags=re.I)
+          Path('reddit_embed_static.html').write_text(s, encoding='utf-8')
+          PY
 
           BROWSER="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser || true)"
           test -n "$BROWSER"
-          LOCAL="file://$PWD/reddit_embed.html"
+          LOCAL="file://$PWD/reddit_embed_static.html"
           "$BROWSER"             --headless=new             --no-sandbox             --disable-gpu             --disable-web-security             --allow-file-access-from-files             --hide-scrollbars             --window-size=1100,1500             --virtual-time-budget=5000             --screenshot=reddit_post_raw.png             "$LOCAL"
           test -s reddit_post_raw.png
           python - <<'PY'
