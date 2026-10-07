@@ -1,0 +1,32 @@
+name: Fetch HQ Subway Vimeo Mirror
+on:
+  push:
+    paths:
+      - 'video-download/subway-vimeo-trigger.txt'
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install yt-dlp
+        run: python -m pip install --quiet -U yt-dlp
+      - name: Download 1080p portrait mirror
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='https://vimeo.com/1151359249'
+          yt-dlp --no-playlist             -f "bestvideo[height>=1920]/best[height>=1920]/best"             -o 'subway_hq.%(ext)s'             "$URL"
+          ls -lh subway_hq.*
+          python - <<'PY'
+          import glob, os
+          p=glob.glob('subway_hq.*')[0]
+          print(p, os.path.getsize(p))
+          assert os.path.getsize(p) > 5_000_000
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: subway-hq-vimeo
+          path: subway_hq.*
+          compression-level: 0
+          retention-days: 1
