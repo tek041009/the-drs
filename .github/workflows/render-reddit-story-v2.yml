@@ -1,0 +1,44 @@
+name: Render Reddit Story V2
+on:
+  push:
+    paths:
+      - 'video-download/reddit-v2-trigger.txt'
+  workflow_dispatch:
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install render stack
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg unzip fonts-dejavu-core
+          python -m pip install --quiet pillow
+      - name: Get real Subway Surfers gameplay
+        run: |
+          curl -fL --retry 3 'https://github.com/evanreilly/subwaysurfers/archive/refs/tags/v1.3.3.7.zip' -o /tmp/subway.zip
+          unzip -q /tmp/subway.zip -d /tmp/subway
+          GAME="$(find /tmp/subway -name 'subway-surfers.mp4' -type f | head -1)"
+          test -n "$GAME"
+          cp "$GAME" gameplay.mp4
+          ffprobe -v error -show_entries stream=width,height,r_frame_rate -show_entries format=duration,size -of json gameplay.mp4
+      - name: Get locked approved narration
+        run: |
+          curl -fL --retry 3 'https://d2ol7oe51mr4n9.cloudfront.net/user_3JzZORlH5hOIMtVqoR4LoNCKTLC/c623b2e7-2d74-4c36-bda3-8b72adea6172.mp3' -o approved_voice.mp3
+          ffprobe -v error -show_entries format=duration,size -of json approved_voice.mp3
+      - name: Render postable short
+        run: python video-download/render_reddit_story_v2.py
+      - name: Upload final and QA
+        uses: actions/upload-artifact@v4
+        with:
+          name: reddit-story-v2-postable
+          path: |
+            Reddit_Story_V2_POSTABLE.mp4
+            qa_sheet.jpg
+          compression-level: 0
+          retention-days: 2
