@@ -1,0 +1,48 @@
+name: Probe Better Subway Sources
+on:
+  push:
+    paths:
+      - 'video-download/subway-lfs-trigger.txt'
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg git-lfs
+          git lfs install
+
+      - name: Fetch source A
+        run: |
+          git clone --depth 1 https://github.com/mohammadshaikh77/gdg.git /tmp/gdg
+          cd /tmp/gdg
+          git lfs pull
+          cp python-backend/assets/subway_surfers.mp4 "$GITHUB_WORKSPACE/source_a.mp4"
+          ffprobe -v error -show_entries stream=codec_name,width,height,r_frame_rate,avg_frame_rate,bit_rate -show_entries format=duration,size,bit_rate -of json "$GITHUB_WORKSPACE/source_a.mp4"
+
+      - name: Fetch source B
+        run: |
+          git clone --depth 1 https://github.com/alx-sima/samantzacrapa.git /tmp/sam
+          cd /tmp/sam
+          git lfs pull
+          cp web/public/subway_surfers.mp4 "$GITHUB_WORKSPACE/source_b.mp4"
+          ffprobe -v error -show_entries stream=codec_name,width,height,r_frame_rate,avg_frame_rate,bit_rate -show_entries format=duration,size,bit_rate -of json "$GITHUB_WORKSPACE/source_b.mp4"
+
+      - name: Make QA-ready clips
+        run: |
+          ffmpeg -y -ss 20 -i source_a.mp4 -t 34 -an             -vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30"             -c:v libx264 -preset medium -crf 17 -pix_fmt yuv420p -movflags +faststart source_a_qa.mp4
+          ffmpeg -y -ss 20 -i source_b.mp4 -t 34 -an             -vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30"             -c:v libx264 -preset medium -crf 17 -pix_fmt yuv420p -movflags +faststart source_b_qa.mp4
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: subway-lfs-candidates
+          path: |
+            source_a_qa.mp4
+            source_b_qa.mp4
+          compression-level: 0
+          retention-days: 1
