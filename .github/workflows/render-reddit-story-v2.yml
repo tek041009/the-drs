@@ -37,10 +37,17 @@ jobs:
 
       - name: Capture the real Reddit post
         run: |
+          UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154 Safari/537.36'
+          REDDIT='https://embed.reddit.com/r/BORUpdates/comments/1wxfjot/aita_for_telling_my_son_and_his_fiance_i_wont_pay/'
+          curl -fL -A "$UA" --retry 3 "$REDDIT" -o reddit_embed.html
+          test -s reddit_embed.html
+          grep -Fq "AITA for telling my son and his fiance I won't pay for the wedding if I can't invite some family members" reddit_embed.html
+          ! grep -Fqi "blocked by network security" reddit_embed.html
+
           BROWSER="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser || true)"
           test -n "$BROWSER"
-          URL='https://embed.reddit.com/r/BORUpdates/comments/1wxfjot/aita_for_telling_my_son_and_his_fiance_i_wont_pay/'
-          "$BROWSER"             --headless=new             --no-sandbox             --disable-gpu             --hide-scrollbars             --window-size=1100,1500             --virtual-time-budget=8000             --screenshot=reddit_post_raw.png             "$URL"
+          LOCAL="file://$PWD/reddit_embed.html"
+          "$BROWSER"             --headless=new             --no-sandbox             --disable-gpu             --disable-web-security             --allow-file-access-from-files             --hide-scrollbars             --window-size=1100,1500             --virtual-time-budget=5000             --screenshot=reddit_post_raw.png             "$LOCAL"
           test -s reddit_post_raw.png
           python - <<'PY'
           from PIL import Image
