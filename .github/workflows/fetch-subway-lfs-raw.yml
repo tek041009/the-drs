@@ -1,0 +1,42 @@
+name: Fetch Raw Subway LFS Candidates
+on:
+  push:
+    paths:
+      - 'video-download/subway-lfs-raw-trigger.txt'
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch source A only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git lfs version
+          GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://github.com/mohammadshaikh77/gdg.git /tmp/gdg
+          cd /tmp/gdg
+          git lfs pull --include="python-backend/assets/subway_surfers.mp4"
+          cp python-backend/assets/subway_surfers.mp4 "$GITHUB_WORKSPACE/source_a.mp4"
+          test "$(stat -c%s "$GITHUB_WORKSPACE/source_a.mp4")" -gt 50000000
+
+      - name: Fetch source B only
+        shell: bash
+        run: |
+          set -euo pipefail
+          GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://github.com/alx-sima/samantzacrapa.git /tmp/sam
+          cd /tmp/sam
+          git lfs pull --include="web/public/subway_surfers.mp4"
+          cp web/public/subway_surfers.mp4 "$GITHUB_WORKSPACE/source_b.mp4"
+          test "$(stat -c%s "$GITHUB_WORKSPACE/source_b.mp4")" -gt 100000000
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: subway-lfs-raw-candidates
+          path: |
+            source_a.mp4
+            source_b.mp4
+          compression-level: 0
+          retention-days: 1
