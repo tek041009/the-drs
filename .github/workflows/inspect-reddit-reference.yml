@@ -1,0 +1,30 @@
+name: Inspect Reddit Shorts Reference
+on:
+  push:
+    branches: [reddit-shorts-pilot]
+    paths:
+      - '.github/workflows/inspect-reddit-reference.yml'
+  workflow_dispatch:
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: reddit-shorts-pilot
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: |
+          pip install pytubefix
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+      - run: python inspect_reddit_reference.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reddit-reference-inspection
+          path: |
+            reference_contact.jpg
+            reference_audio.wav
+          retention-days: 1
