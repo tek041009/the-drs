@@ -1,0 +1,25 @@
+name: Fetch Subway Source
+on:
+  push:
+    paths:
+      - 'video-download/subway-source-trigger.txt'
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch gameplay
+        run: |
+          curl -fL --retry 3 'https://github.com/evanreilly/subwaysurfers/archive/refs/tags/v1.3.3.7.zip' -o subway.zip
+          unzip -q subway.zip -d subway
+          GAME="$(find subway -name 'subway-surfers.mp4' -type f | head -1)"
+          test -n "$GAME"
+          cp "$GAME" gameplay.mp4
+          test -s gameplay.mp4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: subway-source
+          path: gameplay.mp4
+          compression-level: 0
+          retention-days: 1
