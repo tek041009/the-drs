@@ -1,7 +1,6 @@
 from gradio_client import Client
 spaces=[
-    "Lightricks/LTX-2-Video-Fast",
-    "Wan-AI/Wan2.1",
+    "Goalsave/ltx-2-5-studio",
 ]
 for s in spaces:
     print("\\nSPACE",s)
