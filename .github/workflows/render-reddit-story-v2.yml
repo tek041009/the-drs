@@ -20,10 +20,12 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install render stack
+      - name: Check render stack
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg unzip fonts-dejavu-core
+          command -v ffmpeg
+          command -v ffprobe
+          command -v unzip
+          test -f /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
           python -m pip install --quiet pillow
 
       - name: Get Subway Surfers gameplay
