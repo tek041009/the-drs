@@ -34,33 +34,22 @@ duration=len(voice)/sr
 DUR=max(28.0,min(55.0,duration+0.7))
 print("voice duration",duration,"video duration",DUR)
 
-# ---------- subtle original background bed ----------
-N=int(sr*DUR)
-t=np.arange(N)/sr
-bed=np.zeros(N,dtype=np.float32)
-# warm pad
-bed += 0.010*np.sin(2*np.pi*55*t)
-bed += 0.006*np.sin(2*np.pi*82.5*t)
-bed *= (0.65+0.35*np.sin(2*np.pi*0.045*t+1.1)**2)
-# soft kick every 0.8 s
-for sec in np.arange(0.15,DUR,0.8):
-    i=int(sec*sr); L=min(int(0.17*sr),N-i)
-    if L>0:
-        q=np.arange(L)/sr
-        bed[i:i+L]+=0.022*np.sin(2*np.pi*(68-25*q)*q)*np.exp(-17*q)
-# soft tick/snare on offbeat
-rng=np.random.default_rng(7)
-for sec in np.arange(0.55,DUR,0.8):
-    i=int(sec*sr); L=min(int(0.055*sr),N-i)
-    if L>0:
-        q=np.arange(L)/sr
-        bed[i:i+L]+=rng.normal(0,1,L).astype(np.float32)*np.exp(-45*q)*0.007
-mix=bed.copy()
-mix[:len(voice)] += voice[:N]*0.98
-mx=np.max(np.abs(mix))
-if mx>0.97: mix*=0.97/mx
-sf.write("mix.wav",mix,sr)
-
+# ---------- clean voice master ----------
+# Keep the accepted Kokoro voice dry and crisp. The previous pilot had a low-frequency bed
+# and soft filtering around it, which made the narration feel muffled.
+subprocess.run([
+    "ffmpeg","-y","-loglevel","error","-i","voice.wav",
+    "-af",
+    "highpass=f=85,"
+    "equalizer=f=180:t=q:w=1.0:g=-2.0,"
+    "equalizer=f=320:t=q:w=1.1:g=-1.6,"
+    "equalizer=f=2600:t=q:w=1.0:g=2.4,"
+    "equalizer=f=4300:t=q:w=1.0:g=3.0,"
+    "equalizer=f=7200:t=q:w=1.0:g=1.2,"
+    "acompressor=threshold=-18dB:ratio=2.3:attack=8:release=85:makeup=2,"
+    "loudnorm=I=-16:LRA=6:TP=-1.2",
+    "voice_clean.wav"
+],check=True)
 # ---------- gameplay ----------
 font_small="/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 font_num="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
@@ -182,11 +171,11 @@ def frame_at(sec):
 
 # Prefer real royalty-free stock gameplay when acquired by the workflow.
 # The procedural endless-runner remains only as a fail-safe so production never stalls.
-if os.path.exists("stock.mp4") and os.path.getsize("stock.mp4") > 100000:
+if os.path.exists("captured_gameplay.mp4") and os.path.getsize("captured_gameplay.mp4") > 100000:
     subprocess.run([
-        "ffmpeg","-y","-loglevel","error","-stream_loop","-1","-i","stock.mp4",
+        "ffmpeg","-y","-loglevel","error","-stream_loop","-1","-i","captured_gameplay.mp4",
         "-t",f"{DUR:.3f}",
-        "-vf","crop=608:1080:(iw-608)/2:0,scale=540:960:flags=lanczos,fps=30",
+        "-vf","scale=540:960:flags=lanczos,fps=30",
         "-an","-c:v","libx264","-preset","veryfast","-crf","17","-pix_fmt","yuv420p","gameplay.mp4"
     ],check=True)
 else:
@@ -282,7 +271,7 @@ vf = ("scale=1080:1920:flags=lanczos,"
       "drawbox=x=0:y=758:w=1080:h=6:color=0xFF5A36@0.95:t=fill,"
       "ass=captions.ass")
 subprocess.run([
-    "ffmpeg","-y","-loglevel","error","-i","gameplay.mp4","-i","mix.wav",
+    "ffmpeg","-y","-loglevel","error","-i","gameplay.mp4","-i","voice_clean.wav",
     "-vf",vf,"-t",f"{DUR:.3f}",
     "-c:v","libx264","-preset","medium","-crf","18","-pix_fmt","yuv420p",
     "-c:a","aac","-b:a","192k","-movflags","+faststart",
