@@ -1,0 +1,50 @@
+name: Temporary Bowen Portsmouth source visual audit
+on:
+  push:
+    branches: [tmp-bowen-portsmouth-clip-audit]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Source audit contact sheets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --user -q -U yt-dlp pillow
+          export PATH="$HOME/.local/bin:$PATH"
+          mkdir -p audit
+          for vid in R15cQiru4-U ILZR4ngvWfE B5_vpCdI57E; do
+            mkdir -p "/tmp/frames_$vid"
+            yt-dlp --no-playlist --retries 3 --fragment-retries 3 -f "bv*[height<=1080]+ba/b[height<=1080]/best" --merge-output-format mp4 -o "/tmp/$vid.%(ext)s" "https://www.youtube.com/watch?v=$vid"
+            ffprobe -v error -show_format -show_streams -of json "/tmp/$vid.mp4" > "audit/$vid-ffprobe.json"
+            ffmpeg -hide_banner -loglevel error -i "/tmp/$vid.mp4" -vf "fps=2,scale=320:-2" -q:v 6 "/tmp/frames_$vid/f_%05d.jpg"
+            VID="$vid" python3 - <<'PY'
+import os,glob,json,math
+from PIL import Image,ImageDraw,ImageFont
+v=os.environ['VID']; files=sorted(glob.glob('/tmp/frames_'+v+'/f_*.jpg'))
+for start in range(0,len(files),40):
+    batch=files[start:start+40]
+    sheet=Image.new('RGB',(320*8,200*5),'#222')
+    draw=ImageDraw.Draw(sheet)
+    for i,p in enumerate(batch):
+        img=Image.open(p).convert('RGB')
+        x=(i%8)*320; y=(i//8)*200
+        sheet.paste(img,(x,y))
+        draw.text((x+5,y+182),f"{(start+i)/2:.1f}s",fill="white")
+    sheet.save('audit/'+v+'-'+str(start//40).zfill(2)+'.jpg',quality=83,subsampling=1)
+print(v, 'frames',len(files),'sheets',math.ceil(len(files)/40))
+PY
+          done
+      - name: Upload visual inspection sheets
+        uses: actions/upload-artifact@v4
+        with:
+          name: bowen-portsmouth-camera-audit
+          path: audit/
+          compression-level: 0
+          retention-days: 3
