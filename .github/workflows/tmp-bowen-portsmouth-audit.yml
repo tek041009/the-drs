@@ -1,8 +1,8 @@
 name: Temporary Bowen Portsmouth source visual audit
 on:
   push:
-    branches: [tmp-bowen-portsmouth-clip-audit]
-  workflow_dispatch:
+    branches:
+      - tmp-bowen-portsmouth-clip-audit
 
 permissions:
   contents: read
@@ -10,41 +10,52 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
-      - name: Source audit contact sheets
+      - name: Acquire videos and contact sheets
         shell: bash
         run: |
-          set -euo pipefail
-          python3 -m pip install --user -q -U yt-dlp pillow
+          set -uo pipefail
+          python3 -m pip install --user -q -U yt-dlp pillow bgutil-ytdlp-pot-provider
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
           export PATH="$HOME/.local/bin:$PATH"
+          docker run -d --name clip-warp -p 1080:1080 ghcr.io/kingcc/warproxy:latest || true
+          sleep 12
           mkdir -p audit
+          cat > /tmp/contact.py <<'PY'
+          import os,glob,math
+          from PIL import Image,ImageDraw
+          v=os.environ["VID"]
+          files=sorted(glob.glob("/tmp/frames_"+v+"/f_*.jpg"))
+          for start in range(0,len(files),40):
+              batch=files[start:start+40]
+              sheet=Image.new("RGB",(320*8,205*5),"#151515")
+              draw=ImageDraw.Draw(sheet)
+              for i,p in enumerate(batch):
+                  im=Image.open(p).convert("RGB")
+                  x=(i%8)*320; y=(i//8)*205
+                  sheet.paste(im,(x,y))
+                  draw.text((x+5,y+183),f"source {((start+i)/2):.1f}s",fill="white")
+              sheet.save("audit/"+v+"-"+str(start//40).zfill(2)+".jpg",quality=84,subsampling=1)
+          print(v,len(files),"frames",math.ceil(len(files)/40),"sheets")
+          PY
           for vid in R15cQiru4-U ILZR4ngvWfE B5_vpCdI57E; do
             mkdir -p "/tmp/frames_$vid"
-            yt-dlp --no-playlist --retries 3 --fragment-retries 3 -f "bv*[height<=1080]+ba/b[height<=1080]/best" --merge-output-format mp4 -o "/tmp/$vid.%(ext)s" "https://www.youtube.com/watch?v=$vid"
-            ffprobe -v error -show_format -show_streams -of json "/tmp/$vid.mp4" > "audit/$vid-ffprobe.json"
-            ffmpeg -hide_banner -loglevel error -i "/tmp/$vid.mp4" -vf "fps=2,scale=320:-2" -q:v 6 "/tmp/frames_$vid/f_%05d.jpg"
-            VID="$vid" python3 - <<'PY'
-import os,glob,json,math
-from PIL import Image,ImageDraw,ImageFont
-v=os.environ['VID']; files=sorted(glob.glob('/tmp/frames_'+v+'/f_*.jpg'))
-for start in range(0,len(files),40):
-    batch=files[start:start+40]
-    sheet=Image.new('RGB',(320*8,200*5),'#222')
-    draw=ImageDraw.Draw(sheet)
-    for i,p in enumerate(batch):
-        img=Image.open(p).convert('RGB')
-        x=(i%8)*320; y=(i//8)*200
-        sheet.paste(img,(x,y))
-        draw.text((x+5,y+182),f"{(start+i)/2:.1f}s",fill="white")
-    sheet.save('audit/'+v+'-'+str(start//40).zfill(2)+'.jpg',quality=83,subsampling=1)
-print(v, 'frames',len(files),'sheets',math.ceil(len(files)/40))
-PY
+            yt-dlp --proxy socks5://127.0.0.1:1080 --force-ipv4 --js-runtimes node --remote-components ejs:github --extractor-args "youtube:player_client=tv_downgraded,web_creator,mweb;player_skip=webpage" --retries 3 --fragment-retries 3 --socket-timeout 30 --no-playlist -f "bestvideo*[height<=720]+bestaudio/best[height<=720]/18" --merge-output-format mp4 -o "/tmp/$vid.%(ext)s" "https://www.youtube.com/watch?v=$vid" || { echo "$vid DOWNLOAD_FAILED" | tee -a audit/failures.txt; continue; }
+            src=$(find /tmp -maxdepth 1 -name "$vid.*" -type f | head -n 1)
+            if [ -z "$src" ]; then echo "$vid FILE_MISSING" | tee -a audit/failures.txt; continue; fi
+            ffprobe -v error -show_format -show_streams -of json "$src" > "audit/$vid-ffprobe.json" || true
+            ffmpeg -hide_banner -loglevel error -i "$src" -vf "fps=2,scale=320:-2" -q:v 6 "/tmp/frames_$vid/f_%05d.jpg" || true
+            VID="$vid" python3 /tmp/contact.py || true
+            echo "$vid SOURCE_OK $src" | tee -a audit/sources.txt
           done
-      - name: Upload visual inspection sheets
+      - name: Upload visual audit sheets
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: bowen-portsmouth-camera-audit
           path: audit/
+          if-no-files-found: error
           compression-level: 0
           retention-days: 3
