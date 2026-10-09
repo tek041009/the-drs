@@ -1,60 +1,49 @@
-name: Temporary Bowen Portsmouth source visual audit
+name: Temporary Bowen Portsmouth Shot Footage Visual Audit
 on:
   push:
-    branches:
-      - tmp-bowen-portsmouth-clip-audit
-
+    branches: [tmp-bowen-portsmouth-clip-audit]
 permissions:
   contents: read
-
 jobs:
   audit:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - name: Acquire videos and contact sheets
+      - name: Download official goal takes, extract full action and replays
         shell: bash
         run: |
           set -uo pipefail
-          python3 -m pip install --user -q -U yt-dlp pillow bgutil-ytdlp-pot-provider
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg
+          python3 -m pip install --user -q -U yt-dlp
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
           export PATH="$HOME/.local/bin:$PATH"
-          docker run -d --name clip-warp -p 1080:1080 ghcr.io/kingcc/warproxy:latest || true
-          sleep 12
+          docker run -d --name bowen-warp -p 1080:1080 ghcr.io/kingcc/warproxy:latest
+          sleep 10
           mkdir -p audit
-          cat > /tmp/contact.py <<'PY'
-          import os,glob,math
-          from PIL import Image,ImageDraw
-          v=os.environ["VID"]
-          files=sorted(glob.glob("/tmp/frames_"+v+"/f_*.jpg"))
-          for start in range(0,len(files),40):
-              batch=files[start:start+40]
-              sheet=Image.new("RGB",(320*8,205*5),"#151515")
-              draw=ImageDraw.Draw(sheet)
-              for i,p in enumerate(batch):
-                  im=Image.open(p).convert("RGB")
-                  x=(i%8)*320; y=(i//8)*205
-                  sheet.paste(im,(x,y))
-                  draw.text((x+5,y+183),f"source {((start+i)/2):.1f}s",fill="white")
-              sheet.save("audit/"+v+"-"+str(start//40).zfill(2)+".jpg",quality=84,subsampling=1)
-          print(v,len(files),"frames",math.ceil(len(files)/40),"sheets")
-          PY
-          for vid in R15cQiru4-U ILZR4ngvWfE B5_vpCdI57E; do
-            mkdir -p "/tmp/frames_$vid"
-            yt-dlp --proxy socks5://127.0.0.1:1080 --force-ipv4 --js-runtimes node --remote-components ejs:github --extractor-args "youtube:player_client=tv_downgraded,web_creator,mweb;player_skip=webpage" --retries 3 --fragment-retries 3 --socket-timeout 30 --no-playlist -f "bestvideo*[height<=720]+bestaudio/best[height<=720]/18" --merge-output-format mp4 -o "/tmp/$vid.%(ext)s" "https://www.youtube.com/watch?v=$vid" || { echo "$vid DOWNLOAD_FAILED" | tee -a audit/failures.txt; continue; }
+          while IFS='|' read -r vid start dur name; do
+            [ -z "$vid" ] && continue
+            yt-dlp --proxy socks5://127.0.0.1:1080 --force-ipv4 --js-runtimes node --remote-components ejs:github --extractor-args "youtube:player_client=tv_downgraded,web_creator,mweb;player_skip=webpage" --retries 3 --fragment-retries 3 --socket-timeout 30 --no-playlist -f "bestvideo*[height<=1080]+bestaudio/best[height<=1080]/18" --merge-output-format mp4 -o "/tmp/$vid.%(ext)s" "https://www.youtube.com/watch?v=$vid" || { echo "$vid FAILED" >>audit/manifest.txt; continue; }
             src=$(find /tmp -maxdepth 1 -name "$vid.*" -type f | head -n 1)
-            if [ -z "$src" ]; then echo "$vid FILE_MISSING" | tee -a audit/failures.txt; continue; fi
-            ffprobe -v error -show_format -show_streams -of json "$src" > "audit/$vid-ffprobe.json" || true
-            ffmpeg -hide_banner -loglevel error -i "$src" -vf "fps=2,scale=320:-2" -q:v 6 "/tmp/frames_$vid/f_%05d.jpg" || true
-            VID="$vid" python3 /tmp/contact.py || true
-            echo "$vid SOURCE_OK $src" | tee -a audit/sources.txt
-          done
-      - name: Upload visual audit sheets
+            ffprobe -v error -show_entries format=duration,size:stream=width,height,r_frame_rate -of json "$src" >"audit/$name-metadata.json"
+            if [ "$start" = "0" ]; then
+              ffmpeg -y -hide_banner -loglevel error -i "$src" -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 112k "audit/$name.mp4"
+            else
+              ffmpeg -y -hide_banner -loglevel error -ss "$start" -i "$src" -t "$dur" -c:v libx264 -preset fast -crf 19 -c:a aac -b:a 128k "audit/$name.mp4"
+            fi
+            echo "$name URL=https://youtube.com/watch?v=$vid source_trim=$start-$dur" >>audit/manifest.txt
+            ffprobe -v error -show_entries format=duration:stream=width,height,r_frame_rate -of default=noprint_wrappers=1 "audit/$name.mp4" >>audit/manifest.txt
+            ffmpeg -y -hide_banner -loglevel error -i "audit/$name.mp4" -vf "fps=4,scale=320:-2" -q:v 3 "audit/$name-frame-%04d.jpg" || true
+          done <<'SOURCES'
+          R15cQiru4-U|59|34|WHU_SHORT_BOWEN
+          ILZR4ngvWfE|267|56|EFL_EXT_BOWEN
+          B5_vpCdI57E|148|44|WHU_EXT_BOWEN
+          7oEhDOc7GXE|0|0|EFL_SHORT_FULL
+          Syig5LWe0d4|0|0|SCTV_FULL
+          SOURCES
+      - name: Upload source video audition evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: bowen-portsmouth-camera-audit
+          name: portsmouth-goal-video-footage-audition
           path: audit/
           if-no-files-found: error
           compression-level: 0
