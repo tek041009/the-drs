@@ -1,0 +1,70 @@
+name: Bowen WBA Source Acquisition
+on:
+  push:
+    paths:
+      - '.github/workflows/bowen_wba_source.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  acquire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install media tools
+        run: |
+          python -m pip install --upgrade 'yt-dlp[default]' yt-dlp-ejs
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+      - name: Acquire official West Ham / EFL goal footage
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p out
+          cat > /tmp/wba.py <<'PY'
+          import subprocess, os, glob, json, pathlib
+          candidates=[
+            ("whu_goals","https://www.whufc.com/en/video/0_ga7kbzzz?provider=stream"),
+            ("whu_goals_article","https://www.whufc.com/en/news/goals-or-west-ham-united-1-3-west-bromwich-albion"),
+            ("whu_extended","https://www.whufc.com/en/video/0_388eujhv?provider=stream"),
+            ("efl_youtube","ytsearch1:HAMMER BLOW! | West Ham v West Brom extended highlights EFL 2026"),
+            ("whu_youtube","ytsearch1:West Ham 1-3 West Brom Championship Extended Highlights West Ham United FC"),
+          ]
+          logs=[]
+          success=False
+          for name,url in candidates:
+            target="out/"+name+".%(ext)s"
+            cmd=["yt-dlp","--no-playlist","--no-warnings","--socket-timeout","20",
+                 "--retries","2","--fragment-retries","2","--js-runtimes","node",
+                 "--remote-components","ejs:github","-f","bv*[height<=1080]+ba/b[height<=1080]/b",
+                 "--merge-output-format","mp4","-o",target,url]
+            try:
+              p=subprocess.run(cmd,capture_output=True,text=True,timeout=230)
+              logs.append(dict(candidate=name,url=url,code=p.returncode,stdout=p.stdout[-5000:],stderr=p.stderr[-5000:]))
+              print(name, p.returncode, p.stdout[-1000:],p.stderr[-1000:],flush=True)
+            except Exception as e:
+              logs.append(dict(candidate=name,url=url,error=str(e)))
+            files=[pathlib.Path(p) for p in glob.glob("out/"+name+".*") if p.endswith((".mp4",".mkv",".webm"))]
+            if files:
+              file=files[0]
+              probe=subprocess.run(["ffprobe","-v","error","-show_entries","format=duration,size:stream=width,height,r_frame_rate","-of","json",str(file)],capture_output=True,text=True)
+              logs[-1]["file"]=str(file)
+              logs[-1]["probe"]=probe.stdout
+              if probe.returncode==0 and file.stat().st_size>500000:
+                success=True
+                break
+          pathlib.Path("out/acquisition_report.json").write_text(json.dumps(logs,indent=2))
+          print("SUCCESS",success,flush=True)
+          if not success: raise SystemExit(1)
+          PY
+          python /tmp/wba.py
+      - name: Upload footage and provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bowen-west-brom-official-source
+          path: out/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
