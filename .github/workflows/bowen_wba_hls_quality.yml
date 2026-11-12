@@ -1,0 +1,67 @@
+name: Bowen WBA Multi Quality Official Stream
+on:
+  push:
+    paths:
+      - '.github/workflows/bowen_wba_hls_quality.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  acquire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Install FFmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - name: Identify best permitted StreamAMG stream and download
+        shell: bash
+        run: |
+          mkdir -p out
+          python - <<'PY'
+          import requests,subprocess,json,os,re,pathlib
+          base="https://open.http.mp.streamamg.com/p/3000379/sp/300037900/playManifest/entryId/0_388eujhv"
+          attempts=[
+             ("applehttp_https",base+"/format/applehttp/protocol/https"),
+             ("applehttp",base+"/format/applehttp"),
+             ("mpegdash",base+"/format/mpegdash/protocol/https"),
+             ("hdurl",base+"/format/url/protocol/https/flavorId/0_5svpnc2c"),
+             ("url",base+"/format/url/protocol/https"),
+          ]
+          entries=[]
+          for name,url in attempts:
+            d=dict(name=name,url=url)
+            try:
+              r=requests.get(url,timeout=25,headers={"Referer":"https://www.whufc.com/en/","User-Agent":"Mozilla/5.0"},stream=True)
+              d["status"]=r.status_code;d["final_url"]=r.url;d["content_type"]=r.headers.get("Content-Type");d["content_length"]=r.headers.get("Content-Length")
+              if "mpegurl" in (d["content_type"] or "").lower() or "m3u8" in r.url:
+                text=r.text[:25000]
+                d["playlist"]=text[:8000]
+                pathlib.Path(f"out/{name}.m3u8").write_text(text)
+              else: d["first_200"]=str(next(r.iter_content(200),b"")[:120])
+              r.close()
+            except Exception as e:d["error"]=str(e)
+            entries.append(d)
+            print(name,d.get("status"),d.get("final_url","")[:160],d.get("content_type"),d.get("content_length"),d.get("error",""),flush=True)
+          pathlib.Path("out/hls_probe.json").write_text(json.dumps(entries,indent=2))
+          for e in entries:
+            if "m3u8" not in (e.get("final_url") or "") and "mpegurl" not in (e.get("content_type") or "").lower():continue
+            url=e["final_url"]
+            print("FFMPEG attempting",url[:200],flush=True)
+            cmd=["ffmpeg","-y","-loglevel","error","-headers","Referer: https://www.whufc.com/en/\r\nUser-Agent: Mozilla/5.0\r\n","-i",url,"-c","copy","out/WBA_EXTENDED_BEST_HLS.mp4"]
+            try:
+              p=subprocess.run(cmd,capture_output=True,text=True,timeout=300)
+              print("FFMPEG",p.returncode,p.stderr[-1200:],flush=True)
+              if p.returncode==0:
+                q=subprocess.run(["ffprobe","-v","error","-show_entries","stream=codec_name,width,height,r_frame_rate:format=duration,size","-of","json","out/WBA_EXTENDED_BEST_HLS.mp4"],capture_output=True,text=True)
+                print("PROBE",q.stdout,flush=True)
+                if q.returncode==0:break
+            except Exception as ex:print("FFMPEG",str(ex),flush=True)
+          PY
+      - name: Upload probe and optional HD footage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bowen-wba-official-quality
+          path: out/
+          retention-days: 3
+          compression-level: 0
