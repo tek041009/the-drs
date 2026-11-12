@@ -1,0 +1,36 @@
+name: Bowen WBA Kaltura Flavor Discovery
+on:
+  push:
+    paths: ['.github/workflows/bowen_wba_kaltura_flavors.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  flavor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe official playable flavor metadata
+        run: |
+          mkdir -p out
+          python - <<'PY'
+          import requests,json
+          roots=['https://open.http.mp.streamamg.com','https://api.mp.streamamg.com','https://www.kaltura.com','https://cdnapisec.kaltura.com']
+          urls=[]
+          for root in roots:
+            for path in ['/api_v3/?service=flavorasset&action=getByEntryId&entryId=0_ga7kbzzz&format=1','/api_v3/service/flavorasset/action/getByEntryId/entryId/0_ga7kbzzz/format/1','/api_v3/?service=media&action=get&entryId=0_ga7kbzzz&format=1']:
+              urls.append(root+path)
+          results=[]
+          for u in urls:
+            try:
+              r=requests.get(u,timeout=7)
+              d=dict(url=u,status=r.status_code,content_type=r.headers.get('Content-Type'),length=len(r.content),body=r.text[:6500])
+              print(r.status_code,r.url,len(r.content),r.text[:180],flush=True)
+            except Exception as e:d=dict(url=u,error=str(e))
+            results.append(d)
+          open('out/flavors_probe.json','w').write(json.dumps(results,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bowen-wba-flavor-metadata
+          path: out/
+          retention-days: 1
