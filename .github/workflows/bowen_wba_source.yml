@@ -22,6 +22,33 @@ jobs:
           docker run -d --name bowen-warp -p 1080:1080 ghcr.io/kingcc/warproxy:latest
           sleep 10
           docker ps
+      - name: Discover official page stream configuration
+        shell: bash
+        run: |
+          python - <<'PY'
+          import requests,re,json
+          from pathlib import Path
+          Path("out").mkdir(exist_ok=True)
+          pages=[
+           "https://www.whufc.com/en/news/goals-or-west-ham-united-1-3-west-bromwich-albion",
+           "https://www.whufc.com/en/video/0_ga7kbzzz?provider=stream",
+           "https://www.whufc.com/en/news/extended-highlights-or-west-ham-united-1-3-west-bromwich-albion"
+          ]
+          output=[]
+          for u in pages:
+            try:
+              r=requests.get(u,timeout=20,headers={"User-Agent":"Mozilla/5.0"})
+              t=r.text
+              info=dict(url=u,status=r.status_code,length=len(t),title=re.findall(r"<title[^>]*>(.*?)</title>",t,re.I|re.S)[:2],
+                  stream_mentions=[])
+              for match in list(re.finditer(r"kaltura|partner.?id|playmanifest|m3u8|0_ga7kbzzz|0_388eujhv|streamurl|sourceurl|videoUrl|iframe|videoSource",t,re.I))[:80]:
+                info['stream_mentions'].append(t[max(0,match.start()-180):match.end()+220])
+              info['manifest_urls']=list(set(re.findall(r'https?[^"\\\s]+(?:m3u8|mp4)[^"\\\s]*',t,re.I)))[:30]
+              output.append(info)
+            except Exception as e: output.append(dict(url=u,error=str(e)))
+          Path("out/discovery.json").write_text(json.dumps(output,indent=2))
+          print([(o['url'],o.get('status'),o.get('length'),len(o.get('stream_mentions',[]))) for o in output])
+          PY
       - name: Acquire official West Ham / EFL goal footage
         shell: bash
         run: |
@@ -30,6 +57,7 @@ jobs:
           cat > /tmp/wba.py <<'PY'
           import subprocess, os, glob, json, pathlib
           candidates=[
+            ("whu_youtube_short","ytsearch1:West Ham 1-3 West Brom Championship Extended Highlights West Ham United FC"),
             ("efl_youtube_warp","https://www.youtube.com/watch?v=5vjR6LtkW88"),
             ("whu_youtube_warp","https://www.youtube.com/watch?v=dQ6uC7sQVJ4"),
             ("whu_goals","https://www.whufc.com/en/video/0_ga7kbzzz?provider=stream"),
@@ -48,6 +76,8 @@ jobs:
                  "--retries","2","--fragment-retries","2","--js-runtimes","node",
                  "--remote-components","ejs:github","-f","bv*[height<=1080]+ba/b[height<=1080]/b",
                  "--merge-output-format","mp4","-o",target,url]
+            if name=="whu_youtube_short":
+              cmd[1:1]=["--download-sections","*00:03:35-00:06:45","--force-keyframes-at-cuts"]
             try:
               p=subprocess.run(cmd,capture_output=True,text=True,timeout=300)
               logs.append(dict(candidate=name,url=url,code=p.returncode,stdout=p.stdout[-5000:],stderr=p.stderr[-5000:]))
