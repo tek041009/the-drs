@@ -1,0 +1,63 @@
+name: Bowen West Brom Official StreamAMG Source
+on:
+  push:
+    paths:
+      - '.github/workflows/bowen_wba_streamamg.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  official-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install direct stream utilities
+        run: |
+          python -m pip install --upgrade yt-dlp requests
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - name: Resolve and acquire authorised public highlights
+        shell: bash
+        run: |
+          mkdir -p out
+          python - <<'PY'
+          import requests,json,subprocess,pathlib
+          items=[
+            ("WHU_WBA_GOALS_2M11","0_ga7kbzzz"),
+            ("WHU_WBA_EXTENDED_10M28","0_388eujhv"),
+          ]
+          log=[]
+          for name,id in items:
+            url=f"https://open.http.mp.streamamg.com/p/3000379/sp/300037900/playManifest/entryId/{id}/format/url/protocol/https"
+            item={"name":name,"url":url}
+            try:
+              r=requests.get(url,timeout=30,headers={"Referer":"https://www.whufc.com/","User-Agent":"Mozilla/5.0"})
+              item["status"]=r.status_code;item["content_type"]=r.headers.get("content-type");item["body_start"]=r.text[:800];item["redirected_url"]=r.url
+              print("SOURCE",name,"status",r.status_code,"type",item['content_type'],"redirect",r.url,"BODY",r.text[:200],flush=True)
+              if r.status_code!=200:raise ValueError("HTTP "+str(r.status_code))
+              cmd=["yt-dlp","--no-warnings","--add-header","Referer:https://www.whufc.com/","-f","bv*+ba/b","--merge-output-format","mp4","-o",f"out/{name}.%(ext)s",url]
+              p=subprocess.run(cmd,capture_output=True,text=True,timeout=450)
+              item["yt_dlp_return_code"]=p.returncode
+              item["yt_dlp_stdout"]=p.stdout[-2500:]
+              item["yt_dlp_stderr"]=p.stderr[-2500:]
+              print("DL",name,p.returncode,p.stdout[-400:],p.stderr[-400:],flush=True)
+              for fp in pathlib.Path("out").glob(name+".*"):
+                if fp.suffix.lower() not in ('.mp4','.mkv','.webm'):continue
+                probe=subprocess.run(["ffprobe","-v","error","-show_entries","format=duration,size:stream=width,height,r_frame_rate","-of","json",str(fp)],capture_output=True,text=True)
+                item["file"]=str(fp);item["probe"]=probe.stdout
+                print("PROBE",probe.stdout[:400],flush=True)
+            except Exception as e:item["error"]=str(e)
+            log.append(item)
+          pathlib.Path("out/streamamg_report.json").write_text(json.dumps(log,indent=2))
+          success=any(z.get("file") for z in log)
+          print("SUCCESS",success,flush=True)
+          if not success:raise SystemExit(1)
+          PY
+      - name: Upload original sources and trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bowen-wba-official-streamamg
+          path: out/
+          compression-level: 0
+          retention-days: 3
