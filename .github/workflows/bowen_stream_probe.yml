@@ -1,0 +1,36 @@
+name: Bowen Official Media Manifest Probe
+on:
+  push:
+    paths:
+      - '.github/workflows/bowen_stream_probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe public StreamAMG URL metadata
+        run: |
+          mkdir -p out
+          python - <<'PY'
+          import urllib.request,urllib.error,json
+          out=[]
+          for name,id in [('goals','0_ga7kbzzz'),('extended','0_388eujhv')]:
+            url=f'https://open.http.mp.streamamg.com/p/3000379/sp/300037900/playManifest/entryId/{id}/format/url/protocol/https'
+            d=dict(name=name,url=url)
+            try:
+              req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0','Referer':'https://www.whufc.com/en/'})
+              with urllib.request.urlopen(req,timeout=16) as r:
+                d.update(status=r.status,final_url=r.url,headers=dict(r.headers.items()),sample=repr(r.read(400)))
+            except Exception as e:d['error']=str(e)
+            out.append(d)
+          open('out/manifest_info.json','w').write(json.dumps(out,indent=2))
+          print(json.dumps(out,indent=2)[:5500])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wba-playmanifest-diagnostic
+          path: out/
+          retention-days: 1
