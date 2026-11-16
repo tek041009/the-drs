@@ -1,0 +1,38 @@
+name: Roblox 20s Original Kokoro Adam Narration
+on:
+  push:
+    branches: [roblox-adam-20sec-20261116]
+    paths:
+      - '.github/workflows/roblox-adam-20sec.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  generate-adam:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install free offline Kokoro
+        run: |
+          python -m pip install --disable-pip-version-check kokoro-onnx==0.5.0 soundfile numpy
+          ffmpeg -version | head -1
+      - name: Generate real Adam speech (not demo samples)
+        run: python roblox_adam_20s/voice_adam_20.py
+      - name: Verify original Kokoro model hashes and WAV
+        run: |
+          echo "ae315a79b623f244700e4afb9246c46a26066782e049ba174bf3ba433970ee9c  model_cache/kokoro-v1.0.int8.onnx" | sha256sum -c -
+          echo "bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d  model_cache/voices-v1.0.bin" | sha256sum -c -
+          ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1 output/adam_narration_20.wav
+          test "$(python -c 'import json; print(json.load(open("output/manifest.json"))["voice"])')" = "am_adam"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: roblox-20s-authentic-adam-narration
+          path: |
+            output/adam_narration_20.wav
+            output/manifest.json
+            output/adam_line_*.wav
+          retention-days: 7
