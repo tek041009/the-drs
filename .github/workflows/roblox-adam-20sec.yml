@@ -2,13 +2,12 @@ name: Roblox 20s Original Kokoro Adam Narration
 on:
   push:
     branches: [roblox-adam-20sec-20261116]
-    paths:
-      - '.github/workflows/roblox-adam-20sec.yml'
+    paths: ['.github/workflows/roblox-adam-20sec.yml']
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
-  generate-adam:
+  render-adam-mp4:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -16,25 +15,53 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install free offline Kokoro
+      - name: Install local authentic TTS and FFmpeg
         run: |
           python -m pip install --disable-pip-version-check kokoro-onnx==0.6.1 soundfile numpy
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg
-          ffmpeg -version | head -1
-      - name: Generate real Adam speech (not demo samples)
+      - name: Generate voice using official Kokoro Adam and 20s story
         run: python roblox_adam_20s/voice_adam_20.py
-      - name: Verify original Kokoro model hashes and WAV
+      - name: Verify genuine Kokoro model and voice pack
         run: |
           echo "ae315a79b623f244700e4afb9246c46a26066782e049ba174bf3ba433970ee9c  model_cache/kokoro-v1.0.int8.onnx" | sha256sum -c -
           echo "bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d  model_cache/voices-v1.0.bin" | sha256sum -c -
-          ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1 output/adam_narration_20.wav
           test "$(python -c 'import json; print(json.load(open("output/manifest.json"))["voice"])')" = "am_adam"
+      - name: Mix suspense soundtrack (original, no copyrighted music)
+        run: python roblox_adam_20s/soundtrack_mix.py
+      - name: Mux Adam onto original 20-second 3D Roblox animation
+        run: |
+          test -s roblox_adam_20s/original_silent_20s.mp4
+          ffmpeg -hide_banner -loglevel error -y -i roblox_adam_20s/original_silent_20s.mp4 -i output/adam_final_mix_20.wav -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 192k -t 20 -movflags +faststart output/Roblox_3-17AM_Adam_20s.mp4
+          ffprobe -v error -show_entries stream=codec_name,width,height,r_frame_rate:format=duration,size -of json output/Roblox_3-17AM_Adam_20s.mp4 > output/qa_ffprobe.json
+          python - <<'PY'
+          import json
+          j=json.load(open("output/qa_ffprobe.json"))
+          assert abs(float(j["format"]["duration"])-20)<0.05,j
+          assert int(j["format"]["size"])>500000,j
+          assert j["streams"][0]["codec_name"]=="h264",j
+          assert j["streams"][1]["codec_name"]=="aac",j
+          print("MP4_QA_PASS",j)
+          PY
+          ffmpeg -hide_banner -loglevel error -y -ss 11 -i output/Roblox_3-17AM_Adam_20s.mp4 -frames:v 1 output/frame11.png
+          sha256sum output/Roblox_3-17AM_Adam_20s.mp4
       - uses: actions/upload-artifact@v4
         with:
-          name: roblox-20s-authentic-adam-narration
+          name: roblox-3-17am-20sec-ADAM-actual-MP4
           path: |
+            output/Roblox_3-17AM_Adam_20s.mp4
             output/adam_narration_20.wav
             output/manifest.json
-            output/adam_line_*.wav
+            output/qa_ffprobe.json
+            output/frame11.png
           retention-days: 7
+      - name: Publish public MP4 download link (no paid API)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=roblox-adam-20sec-20261116
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" output/Roblox_3-17AM_Adam_20s.mp4 output/manifest.json --clobber
+          else
+            gh release create "$TAG" output/Roblox_3-17AM_Adam_20s.mp4 output/manifest.json --target "$GITHUB_SHA" --title "Roblox 3:17 AM · 20 seconds · real Kokoro Adam" --notes "Authentic am_adam narration from Kokoro 82M v1.0; original procedural 3D animation. 20-second vertical MP4."
+          fi
